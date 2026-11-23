@@ -407,7 +407,8 @@ def test_official_linked_ats_source_is_auto_approved_and_custom_page_waits(tmp_p
     db = tmp_path / "registry.sqlite3"
     con = connect(db)
     upsert_candidate(con, country="FR", registry_id="123456789", legal_name="Example SAS",
-                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True)
+                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True,
+                     raw={"employer_scope": "employer", "employee_range": "11"})
     set_domain(con, "FR", "123456789", "https://example.fr", confirmed=True)
     homepage = '<html><a href="https://example.fr/careers">Careers</a></html>'
     careers = '<html><iframe src="https://boards.greenhouse.io/example"></iframe></html>'
@@ -421,7 +422,8 @@ def test_official_linked_ats_source_is_auto_approved_and_custom_page_waits(tmp_p
     # A custom first-party page with structured jobs but no known ATS is
     # discovered as a candidate and cannot be automatically published.
     upsert_candidate(con, country="FR", registry_id="987654321", legal_name="Custom SAS",
-                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True)
+                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True,
+                     raw={"employer_scope": "employer", "employee_range": "11"})
     set_domain(con, "FR", "987654321", "https://custom.fr", confirmed=True)
     custom_home = '<html><a href="https://custom.fr/jobs">Careers</a></html>'
     custom_jobs = '<html><script type="application/ld+json">{"@type":"JobPosting","title":"Finance Analyst"}</script></html>'
