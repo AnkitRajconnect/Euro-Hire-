@@ -29,6 +29,9 @@ CITIES = [
     ("Ghent", "BE", 51.054, 3.722, ["gent"]),
     ("Leuven", "BE", 50.879, 4.701, []),
     ("Paris", "FR", 48.857, 2.352, []),
+    # Approximate municipality centres, used for clearly labelled city-level pins.
+    ("Vitry-sur-Seine", "FR", 48.787, 2.392, ["vitry sur seine"]),
+    ("Pantin", "FR", 48.894, 2.409, []),
     ("Lyon", "FR", 45.764, 4.836, []),
     ("Marseille", "FR", 43.296, 5.370, []),
     ("Toulouse", "FR", 43.605, 1.444, []),
