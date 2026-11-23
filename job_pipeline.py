@@ -159,7 +159,7 @@ def extract_board_token(provider: str, url: str) -> str | None:
                 locale, site = parts[0], parts[1] if len(parts) > 1 else ""
             else:
                 locale, site = "en-US", parts[0]
-            if not site or site.lower() in RESERVED_SLUGS:
+            if not site or site.lower() in {"wday", "api", "login"}:
                 continue
             return "|".join((match.group(1), match.group(2), site, locale))
         if mode == "subdomain" and host.endswith("." + domain):
