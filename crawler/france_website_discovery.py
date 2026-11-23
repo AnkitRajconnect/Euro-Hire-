@@ -426,84 +426,127 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
 
 
 def ingest_overture_release(con, release: str) -> dict:
-    """Stream French Overture place records with website fields into the candidate DB.
-
-    No fixed employer ceiling is applied. Only exact company/trading-name
-    matches enter the database; all website URLs remain unverified candidates.
-    """
+    """Stream French Overture places and match every known name variant to SIRENE."""
     try:
         import duckdb
     except ImportError as exc:
         raise RuntimeError("Install the duckdb dependency to query Overture Places") from exc
 
+    ensure_discovery_schema(con)
     name_index = _company_name_index(con)
     if not name_index:
         raise RuntimeError("No active French legal entities are loaded in the company registry")
 
     ddb = duckdb.connect()
     scanned = matched_places = candidate_domains = invalid_urls = 0
+    matched_name_languages: dict[str, int] = {}
     try:
         ddb.execute("INSTALL httpfs")
         ddb.execute("LOAD httpfs")
         ddb.execute("SET s3_region='us-west-2'")
         ddb.execute("SET memory_limit='2GB'")
+        ddb.execute("SET threads=4")
         source = OVERTURE_S3.format(release=release)
         query = f"""
-            SELECT id, names.primary AS place_name, brand.names.primary AS brand_name, websites,
-                   addresses[1].freeform AS address,
-                   addresses[1].locality AS locality,
-                   addresses[1].postcode AS postcode,
-                   addresses[1].region AS region,
+            WITH french_places AS (
+                SELECT id, names, brand, websites, sources, confidence,
+                       taxonomy.primary AS place_category,
+                       list_filter(addresses, a -> a.country = 'FR') AS fr_addresses
+                FROM read_parquet('{source}')
+                WHERE addresses IS NOT NULL
+                  AND len(addresses) > 0
+                  AND websites IS NOT NULL
+                  AND len(websites) > 0
+                  -- Overture is global. These bounding boxes prune remote row groups
+                  -- for metropolitan France and French overseas territories.
+                  AND (
+                    bbox IS NULL
+                    OR (bbox.xmin <= 10.0 AND bbox.xmax >= -6.0 AND bbox.ymin <= 52.0 AND bbox.ymax >= 41.0)
+                    OR (bbox.xmin <= -60.5 AND bbox.xmax >= -62.0 AND bbox.ymin <= 17.0 AND bbox.ymax >= 14.0)
+                    OR (bbox.xmin <= -51.0 AND bbox.xmax >= -55.5 AND bbox.ymin <= 6.0 AND bbox.ymax >= 1.5)
+                    OR (bbox.xmin <= 56.5 AND bbox.xmax >= 54.8 AND bbox.ymin <= -20.0 AND bbox.ymax >= -22.0)
+                    OR (bbox.xmin <= 46.0 AND bbox.xmax >= 44.5 AND bbox.ymin <= -12.0 AND bbox.ymax >= -14.0)
+                    OR (bbox.xmin <= -62.4 AND bbox.xmax >= -63.5 AND bbox.ymin <= 18.5 AND bbox.ymax >= 17.4)
+                    OR (bbox.xmin <= -55.5 AND bbox.xmax >= -57.0 AND bbox.ymin <= 48.0 AND bbox.ymax >= 46.0)
+                    OR (bbox.xmin <= -133.0 AND bbox.xmax >= -155.0 AND bbox.ymin <= -6.0 AND bbox.ymax >= -29.0)
+                    OR (bbox.xmin <= 169.0 AND bbox.xmax >= 162.0 AND bbox.ymin <= -17.0 AND bbox.ymax >= -24.0)
+                    OR (bbox.xmin <= -175.0 AND bbox.xmax >= -179.0 AND bbox.ymin <= -12.0 AND bbox.ymax >= -15.0)
+                    OR (bbox.xmin <= -108.0 AND bbox.xmax >= -110.0 AND bbox.ymin <= 11.0 AND bbox.ymax >= 9.0)
+                  )
+            )
+            SELECT id,
+                   to_json(names) AS names_json,
+                   to_json(brand.names) AS brand_names_json,
+                   websites,
+                   fr_addresses[1].freeform AS address,
+                   fr_addresses[1].locality AS locality,
+                   fr_addresses[1].postcode AS postcode,
+                   fr_addresses[1].region AS region,
+                   place_category,
+                   to_json(sources) AS sources_json,
                    confidence
-            FROM read_parquet('{source}')
-            WHERE addresses IS NOT NULL
-              AND len(addresses) > 0
-              AND addresses[1].country = 'FR'
-              -- Overture is a global dataset. Bounding-box intersection limits
-              -- row groups to metropolitan France and inhabited French overseas
-              -- territories; the country predicate above remains authoritative.
-              AND (
-                bbox IS NULL
-                OR (bbox.xmin <= 10.0 AND bbox.xmax >= -6.0 AND bbox.ymin <= 52.0 AND bbox.ymax >= 41.0)
-                OR (bbox.xmin <= -60.5 AND bbox.xmax >= -62.0 AND bbox.ymin <= 17.0 AND bbox.ymax >= 14.0)
-                OR (bbox.xmin <= -51.0 AND bbox.xmax >= -55.5 AND bbox.ymin <= 6.0 AND bbox.ymax >= 1.5)
-                OR (bbox.xmin <= 56.5 AND bbox.xmax >= 54.8 AND bbox.ymin <= -20.0 AND bbox.ymax >= -22.0)
-                OR (bbox.xmin <= 46.0 AND bbox.xmax >= 44.5 AND bbox.ymin <= -12.0 AND bbox.ymax >= -14.0)
-                OR (bbox.xmin <= -62.4 AND bbox.xmax >= -63.5 AND bbox.ymin <= 18.5 AND bbox.ymax >= 17.4)
-                OR (bbox.xmin <= -55.5 AND bbox.xmax >= -57.0 AND bbox.ymin <= 48.0 AND bbox.ymax >= 46.0)
-                OR (bbox.xmin <= -133.0 AND bbox.xmax >= -155.0 AND bbox.ymin <= -6.0 AND bbox.ymax >= -29.0)
-                OR (bbox.xmin <= 169.0 AND bbox.xmax >= 162.0 AND bbox.ymin <= -17.0 AND bbox.ymax >= -24.0)
-                OR (bbox.xmin <= -175.0 AND bbox.xmax >= -179.0 AND bbox.ymin <= -12.0 AND bbox.ymax >= -15.0)
-                OR (bbox.xmin <= -108.0 AND bbox.xmax >= -110.0 AND bbox.ymin <= 11.0 AND bbox.ymax >= 9.0)
-              )
-              AND websites IS NOT NULL
-              AND len(websites) > 0
+            FROM french_places
+            WHERE len(fr_addresses) > 0
         """
         cursor = ddb.execute(query)
         while True:
             batch = cursor.fetchmany(BATCH_SIZE)
             if not batch:
                 break
-            for place_id, place_name, brand_name, websites, address, locality, postcode, region, confidence in batch:
+            for (place_id, names_json, brand_names_json, websites, address,
+                 locality, postcode, region, place_category, sources_json, confidence) in batch:
                 scanned += 1
-                matched = {}
-                matched_name = None
-                for source_name in (place_name, brand_name):
-                    if not source_name:
-                        continue
-                    source_keys = name_keys(str(source_name))
-                    for key in source_keys:
+                variants = (
+                    extract_overture_name_variants(names_json, prefix="place")
+                    + extract_overture_name_variants(brand_names_json, prefix="brand")
+                )
+                matched: dict[str, str] = {}
+                matched_variant_records: list[dict] = []
+                for variant in variants:
+                    for key in name_keys(variant["value"]):
                         for registry_id, method in name_index.get(key, {}).items():
                             matched.setdefault(registry_id, method)
-                            if matched_name is None:
-                                matched_name = str(source_name)
-                if not matched or not matched_name:
+                            record = {**variant, "registry_id": str(registry_id),
+                                      "registry_match_method": method}
+                            if record not in matched_variant_records:
+                                matched_variant_records.append(record)
+                if not matched or not matched_variant_records:
                     continue
                 matched_places += 1
-                best_method = "exact_legal_name" if "exact_legal_name" in matched.values() else "exact_trading_name"
-                matched_keys = name_keys(matched_name)
-                normalized = min(matched_keys, key=lambda key: (len(key), key))
+
+                method_priority = {
+                    "exact_legal_name": 0,
+                    "exact_establishment_alias": 1,
+                    "exact_trading_name": 2,
+                }
+                best_match = min(
+                    matched_variant_records,
+                    key=lambda item: (
+                        method_priority.get(item["registry_match_method"], 9),
+                        0 if str(item.get("language") or "").lower().startswith("fr") else 1,
+                        0 if item.get("variant") == "primary" else 1,
+                        len(item["value"]),
+                    ),
+                )
+                best_method = best_match["registry_match_method"]
+                normalized = min(name_keys(best_match["value"]), key=lambda key: (len(key), key))
+                display_name = next(
+                    (v["value"] for v in variants if v["source_field"] == "place.names.primary"),
+                    best_match["value"],
+                )
+                for item in matched_variant_records:
+                    language = str(item.get("language") or "unspecified").lower()
+                    matched_name_languages[language] = matched_name_languages.get(language, 0) + 1
+
                 website_values = websites if isinstance(websites, (list, tuple)) else [websites]
+                source_evidence = extract_overture_source_evidence(sources_json)
+                if not source_evidence:
+                    source_evidence = [{
+                        "provider": "overture_maps",
+                        "dataset": "places",
+                        "record_id": str(place_id),
+                        "release": release,
+                    }]
                 for website in website_values:
                     cleaned = _clean_candidate_url(str(website or ""))
                     if not cleaned:
@@ -512,16 +555,18 @@ def ingest_overture_release(con, release: str) -> dict:
                     candidate_url, domain = cleaned
                     before = con.total_changes
                     _upsert_candidate(
-                        con, place_id=str(place_id), place_name=str(place_name),
+                        con, place_id=str(place_id), place_name=str(display_name),
                         website_url=candidate_url, domain=domain,
                         normalized_name=normalized, registry_ids=list(matched),
                         match_method=best_method, address=address, locality=locality,
                         postcode=postcode, region=region, confidence=confidence,
-                        release=release,
+                        release=release, matched_names=matched_variant_records,
+                        source_evidence=source_evidence, place_category=place_category,
                     )
                     if con.total_changes > before:
                         candidate_domains += 1
             con.commit()
+
         con.execute(
             """INSERT INTO france_website_discovery_meta(key,value,updated_at)
                VALUES('overture_release',?,?)
@@ -538,6 +583,7 @@ def ingest_overture_release(con, release: str) -> dict:
         "candidate_rows_written_or_updated": candidate_domains,
         "invalid_or_non_company_urls": invalid_urls,
         "registry_name_keys": len(name_index),
+        "matched_name_language_counts": matched_name_languages,
     }
 
 
