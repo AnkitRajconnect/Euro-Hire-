@@ -1064,13 +1064,27 @@ def import_cbe_file(con: sqlite3.Connection, path: Path, mapping_path: Path,
     return count
 
 
+def _classify_fr_employer_range(value: str) -> str:
+    """Classify SIRENE employee bands; missing data is never assumed to employ."""
+    code = str(value or "").strip().upper()
+    if code == "NN":
+        return "non_employer"
+    if code in {"00", "01", "02", "03", "11", "12", "21", "22", "31", "32", "41", "42", "51", "52", "53"}:
+        return "employer"
+    return "unknown"
+
+
 def import_fr_stock_file(con: sqlite3.Connection, path: Path, mapping_path: Path,
                          confirm_full_snapshot: bool = False) -> int:
-    """Import an INSEE StockUniteLegale CSV/ZIP using explicit official field names."""
+    """Import INSEE StockUniteLegale and classify employers from employee bands.
+
+    The employee-band column must be explicitly mapped. SIRENE employee bands
+    are statistical and may be N-2/N-3; unknown values remain unresolved.
+    """
     mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
     if mapping.get("full_snapshot") is True and not confirm_full_snapshot:
         raise ValueError("A full snapshot import requires --confirm-full-snapshot")
-    required = {"number_column", "name_column", "status_column", "active_values", "legal_form_column", "legal_form_prefixes"}
+    required = {"number_column", "name_column", "status_column", "active_values", "legal_form_column", "legal_form_prefixes", "employee_range_column"}
     missing = required - set(mapping)
     if missing:
         raise ValueError(f"INSEE mapping missing keys: {', '.join(sorted(missing))}")
@@ -1096,10 +1110,14 @@ def import_fr_stock_file(con: sqlite3.Connection, path: Path, mapping_path: Path
         inactive = status.casefold() in inactive_values
         if not (active or inactive):
             continue
+        employee_range = norm.get(mapping["employee_range_column"], "").strip().upper()
+        employer_scope = _classify_fr_employer_range(employee_range)
         upsert_candidate(con, country="FR", registry_id=number, legal_name=name, legal_form=legal_form,
                          legal_person=True, registry_status="active" if active else "inactive", registry_source="INSEE SIRENE stock",
                          raw={"activity_code": norm.get(mapping.get("activity_column", ""), ""),
-                              "employee_range": norm.get(mapping.get("employee_range_column", ""), ""),
+                              "employee_range": employee_range or None,
+                              "employee_range_date": norm.get(mapping.get("employee_range_date_column", ""), "") or None,
+                              "employer_scope": employer_scope,
                               "status": status, "diffusion_status": diffusion},
                          registry_checked_at=snapshot_date, commit=False)
         count += 1
