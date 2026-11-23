@@ -41,12 +41,16 @@ NON_COMPANY_HOSTS = {
 
 LEGAL_LINK_TERMS = (
     "mentions legales", "mention legale", "informations legales",
-    "information legale", "infos legales", "legal notice", "legal-notice",
-    "impressum",
+    "information legale", "infos legales", "informations juridiques",
+    "informations de l'entreprise", "editeur du site", "identite de l'entreprise",
+    "legal notice", "legal-notice", "impressum",
 )
 LEGAL_PATHS = (
     "/mentions-legales", "/mentions-legales/", "/mentions_legales",
-    "/informations-legales", "/infos-legales", "/legal-notice", "/legal",
+    "/mentions-legales.html", "/mentions-legales-et-confidentialite",
+    "/mentions-legales-et-cgv", "/fr/mentions-legales",
+    "/informations-legales", "/informations-juridiques",
+    "/infos-legales", "/editeur-du-site", "/legal-notice", "/legal",
     "/impressum",
 )
 LEGAL_ID_RE = re.compile(r"(?<!\d)(\d{3}[\s.\-]?\d{3}[\s.\-]?\d{3}(?:[\s.\-]?\d{5})?)(?!\d)")
