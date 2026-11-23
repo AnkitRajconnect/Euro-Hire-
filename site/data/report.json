@@ -1,9 +1,9 @@
 {
- "generated_at": "2026-11-23T14:36:37+00:00",
+ "generated_at": "2026-11-23T15:11:58+00:00",
  "feeds_ok": 7,
  "feeds_total": 7,
- "jobs_published": 302,
- "jobs_rejected": 777,
+ "jobs_published": 8,
+ "jobs_rejected": 1073,
  "jobs_held_for_review": 60,
  "companies": [
   {
@@ -12,11 +12,11 @@
    "ats": "ashby",
    "ok": true,
    "raw": 123,
-   "kept": 60,
-   "rejected": 51,
+   "kept": 1,
+   "rejected": 110,
    "review": 12,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 51,
+    "outside Europe or occupation not in launch taxonomy": 110,
     "occupation is not in the approved professional-role taxonomy": 12
    },
    "error": null
@@ -41,11 +41,11 @@
    "ats": "ashby",
    "ok": true,
    "raw": 32,
-   "kept": 9,
-   "rejected": 23,
+   "kept": 0,
+   "rejected": 32,
    "review": 0,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 23
+    "outside Europe or occupation not in launch taxonomy": 32
    },
    "error": null
   },
@@ -55,11 +55,11 @@
    "ats": "lever",
    "ok": true,
    "raw": 90,
-   "kept": 44,
-   "rejected": 43,
+   "kept": 1,
+   "rejected": 86,
    "review": 3,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 43,
+    "outside Europe or occupation not in launch taxonomy": 86,
     "occupation is not in the approved professional-role taxonomy": 3
    },
    "error": null
@@ -69,12 +69,12 @@
    "slug": "stripe",
    "ats": "greenhouse",
    "ok": true,
-   "raw": 777,
-   "kept": 165,
-   "rejected": 568,
+   "raw": 778,
+   "kept": 5,
+   "rejected": 729,
    "review": 44,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 565,
+    "outside Europe or occupation not in launch taxonomy": 726,
     "occupation is not in the approved professional-role taxonomy": 44,
     "vacancy contains a high-risk payment or money-transfer request": 3
    },
@@ -85,12 +85,12 @@
    "slug": "supabase",
    "ats": "ashby",
    "ok": true,
-   "raw": 80,
-   "kept": 5,
-   "rejected": 74,
+   "raw": 81,
+   "kept": 0,
+   "rejected": 80,
    "review": 1,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 74,
+    "outside Europe or occupation not in launch taxonomy": 80,
     "occupation is not in the approved professional-role taxonomy": 1
    },
    "error": null
@@ -101,11 +101,11 @@
    "ats": "ashby",
    "ok": true,
    "raw": 27,
-   "kept": 19,
-   "rejected": 8,
+   "kept": 1,
+   "rejected": 26,
    "review": 0,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 8
+    "outside Europe or occupation not in launch taxonomy": 26
    },
    "error": null
   }
