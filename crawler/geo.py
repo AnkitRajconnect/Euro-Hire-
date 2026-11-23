@@ -124,6 +124,23 @@ COUNTRIES = {
     "IS": ("Iceland", 64.96, -19.02, []),
     "MT": ("Malta", 35.94, 14.38, []),
     "CY": ("Cyprus", 35.13, 33.43, []),
+
+    "AL": ("Albania", 41.15, 20.17, ["shqipëria", "shqiperia"]),
+    "BA": ("Bosnia and Herzegovina", 43.92, 17.68, ["bosnia", "herzegovina"]),
+    "ME": ("Montenegro", 42.71, 19.37, ["crna gora"]),
+    "MK": ("North Macedonia", 41.61, 21.75, ["macedonia"]),
+    "MD": ("Moldova", 47.01, 28.86, ["republic of moldova"]),
+    "TR": ("Turkey", 39.00, 35.00, ["Türkiye", "turkiye"]),
+    "XK": ("Kosovo", 42.60, 20.90, ["kosova"]),
+    "AD": ("Andorra", 42.55, 1.60, []),
+    "LI": ("Liechtenstein", 47.14, 9.52, []),
+    "MC": ("Monaco", 43.74, 7.42, []),
+    "SM": ("San Marino", 43.94, 12.46, []),
+    "VA": ("Vatican City", 41.90, 12.45, ["holy see"]),
+    "BY": ("Belarus", 53.71, 27.95, []),
+    "AM": ("Armenia", 40.18, 44.51, []),
+    "GE": ("Georgia", 42.32, 43.36, []),
+    "AZ": ("Azerbaijan", 40.14, 47.58, []),
 }
 
 EUROPE = set(COUNTRIES)
