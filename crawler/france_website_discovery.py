@@ -1131,39 +1131,86 @@ def export_verified_websites(con, output: Path) -> int:
 
 def run(db: Path, *, verify_limit: int = 1000, report_path: Path | None = None,
         websites_output_path: Path | None = None, force_import: bool = False) -> dict:
-    http = Http(min_delay=0.5, timeout=25, retries=2)
-    catalog = http.get_json(STAC_CATALOG, headers={"Accept": "application/json"})
-    release = str(catalog.get("latest") or "")
-    if not RELEASE_RE.fullmatch(release):
-        raise RuntimeError(f"Overture STAC returned an invalid latest release: {release!r}")
-
+    """Run independent discovery sources, persist evidence, then verify candidates."""
     con = connect(db)
-    con.executescript(SCHEMA)
+    ensure_discovery_schema(con)
     con.executescript(ESTABLISHMENT_ALIAS_SCHEMA)
+    source_runs: dict[str, dict] = {}
     ingest = None
-    alias_sync = {}
+    alias_sync: dict = {}
+    release = "unavailable"
+
     try:
         try:
             alias_sync = sync_establishment_aliases(con, name_keys)
         except Exception as exc:
             alias_sync = {"ok": False, "updated": False, "error": str(exc)[:1000]}
-            print(f"SIRENE establishment alias sync failed; continuing with legal names and available aliases: {exc}")
+            print(f"SIRENE establishment alias sync failed; using existing legal names and aliases: {exc}")
+
         previous = con.execute(
             "SELECT value FROM france_website_discovery_meta WHERE key='overture_release'"
         ).fetchone()
-        if force_import or alias_sync.get("updated") or not previous or previous["value"] != release:
-            ingest = ingest_overture_release(con, release)
-        else:
-            print(f"Overture release {release} already imported; skipping full re-scan.")
+        previous_release = str(previous["value"]) if previous else None
+
+        # Overture is the broad physical-business candidate source. A temporary
+        # catalogue failure must not prevent verification of already stored rows.
+        try:
+            discovery_http = Http(min_delay=0.5, timeout=60, retries=2)
+            catalog = discovery_http.get_json(STAC_CATALOG, headers={"Accept": "application/json"})
+            current_release = str(catalog.get("latest") or "")
+            if not RELEASE_RE.fullmatch(current_release):
+                raise RuntimeError(f"Overture STAC returned an invalid latest release: {current_release!r}")
+            release = current_release
+            if force_import or alias_sync.get("updated") or not previous_release or previous_release != current_release:
+                ingest = ingest_overture_release(con, current_release)
+                source_runs["overture"] = {"ok": True, **(ingest or {})}
+            else:
+                source_runs["overture"] = {
+                    "ok": True,
+                    "skipped": True,
+                    "release": current_release,
+                    "reason": "Current Overture release and SIRENE alias index are already present",
+                }
+        except Exception as exc:
+            release = previous_release or "unavailable"
+            source_runs["overture"] = {
+                "ok": False,
+                "release": release,
+                "error": str(exc)[:1000],
+            }
+            print(f"Overture discovery failed; continuing with other sources and stored candidates: {exc}")
+
+        # Wikidata adds online-first and non-storefront employers not reliably
+        # represented in physical-place datasets. The SIREN property must match
+        # an active French employer record before its website is considered.
+        try:
+            wikidata_result = ingest_wikidata_siren_websites(
+                con, Http(min_delay=1.0, timeout=60, retries=2), pages=2
+            )
+            source_runs["wikidata"] = {"ok": True, **wikidata_result}
+        except Exception as exc:
+            source_runs["wikidata"] = {
+                "ok": False,
+                "error": str(exc)[:1000],
+                "note": "No Wikidata candidate rows were added in this run; existing candidates remain available for verification.",
+            }
+            print(f"Wikidata discovery failed; continuing with existing candidates: {exc}")
+
         verification = verify_pending_candidates(
             con, Http(min_delay=0.5, timeout=20, retries=1), limit=verify_limit
         )
         verified_websites = export_verified_websites(
             con, websites_output_path
         ) if websites_output_path else 0
-        report = build_report(con, release, ingest, verification)
+        report = build_report(con, release, ingest, verification, source_runs=source_runs)
         report["establishment_alias_sync"] = alias_sync
         report["verified_websites_exported"] = verified_websites
+        report["discovery_health"] = {
+            "any_source_succeeded": any(item.get("ok") for item in source_runs.values()),
+            "all_sources_succeeded": bool(source_runs) and all(item.get("ok") for item in source_runs.values()),
+            "source_failures": [name for name, item in source_runs.items() if not item.get("ok")],
+            "note": "Source success means candidate discovery ran; it does not mean nationwide employer coverage is complete.",
+        }
         if report_path:
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
