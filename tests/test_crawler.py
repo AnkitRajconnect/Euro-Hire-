@@ -594,12 +594,12 @@ def test_insee_stock_import_streams_and_filters_non_legal_people(tmp_path):
     from crawler.company_registry import import_fr_stock_file
     csv_file = tmp_path / "stock-unite-legale.csv"
     csv_file.write_text(
-        "siren;denominationUniteLegale;etatAdministratifUniteLegale;categorieJuridiqueUniteLegale;statutDiffusionUniteLegale;activitePrincipaleUniteLegale\n"
-        "123456789;Example SAS;A;5720;O;62.01Z\n"
-        "987654321;Closed SAS;C;5720;O;62.01Z\n"
-        "111111111;Individual;A;1000;O;62.01Z\n"
-        "222222222;Partial diffusion;A;5720;P;62.01Z\n"
-        "333333333;Undivided grouping;A;2110;O;62.01Z\n",
+        "siren;denominationUniteLegale;etatAdministratifUniteLegale;categorieJuridiqueUniteLegale;statutDiffusionUniteLegale;activitePrincipaleUniteLegale;trancheEffectifsUniteLegale\n"
+        "123456789;Example SAS;A;5720;O;62.01Z;11\n"
+        "987654321;Closed SAS;C;5720;O;62.01Z;00\n"
+        "111111111;Individual;A;1000;O;62.01Z;NN\n"
+        "222222222;Partial diffusion;A;5720;P;62.01Z;11\n"
+        "333333333;Undivided grouping;A;2110;O;62.01Z;11\n",
         encoding="utf-8",
     )
     mapping_file = tmp_path / "insee-mapping.json"
@@ -608,6 +608,7 @@ def test_insee_stock_import_streams_and_filters_non_legal_people(tmp_path):
         "status_column": "etatAdministratifUniteLegale", "active_values": ["A"],
         "inactive_values": ["C"], "legal_form_column": "categorieJuridiqueUniteLegale",
         "legal_form_prefixes": ["3", "4", "5", "6"],
+        "employee_range_column": "trancheEffectifsUniteLegale",
         "diffusion_column": "statutDiffusionUniteLegale", "excluded_diffusion_values": ["P", "N"],
         "snapshot_date": datetime.now(timezone.utc).date().isoformat(),
         "activity_column": "activitePrincipaleUniteLegale"
