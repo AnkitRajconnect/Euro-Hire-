@@ -1,0 +1,95 @@
+name: GullyHire live crawler and website
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '15 5 * * *' # Daily at 05:15 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: gullyhire-live-pipeline
+  cancel-in-progress: false
+
+jobs:
+  crawl-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install crawler dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Run the automated test suite
+        run: python -m pytest -q
+
+      - name: Crawl the configured public employer boards
+        env:
+          GULLYHIRE_CONTACT: https://github.com/${{ github.repository }}
+        run: >-
+          python -m crawler.crawl
+          --curated-config
+          --companies companies.yaml
+          --review-out /tmp/gullyhire-review-queue.json
+          --out site/data
+          --workers 6
+
+      - name: Save the latest real job data in the repository
+        run: |
+          git config user.name 'gullyhire-bot'
+          git config user.email 'gullyhire-bot@users.noreply.github.com'
+          git add site/data/jobs.json site/data/report.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Refresh live employer jobs $(date -u +%F)"
+            git push
+          else
+            echo 'Live job data did not change.'
+          fi
+
+      - name: Keep held vacancies for owner review (not published)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gullyhire-review-queue
+          path: /tmp/gullyhire-review-queue.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v6
+
+      - name: Package the live website
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: crawl-and-package
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+      actions: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish GullyHire
+        id: deployment
+        uses: actions/deploy-pages@v5
