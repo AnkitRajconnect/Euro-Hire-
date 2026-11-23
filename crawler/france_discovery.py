@@ -64,8 +64,11 @@ def _candidate_from_result(item: dict, query: str) -> dict | None:
     head_office = item.get("siege") or {}
     if not isinstance(head_office, dict):
         head_office = {}
-    employer_flag = str(head_office.get("caractere_employeur") or "").strip().upper()
-    employee_range = str(head_office.get("tranche_effectif_salarie") or "").strip().upper()
+    # Recherche d'entreprises returns legal-unit employer and headcount fields
+    # at the top level in some responses; older/minimal payloads may place
+    # them under siege. Prefer the legal-unit fields and fall back safely.
+    employer_flag = str(item.get("caractere_employeur") or head_office.get("caractere_employeur") or "").strip().upper()
+    employee_range = str(item.get("tranche_effectif_salarie") or head_office.get("tranche_effectif_salarie") or "").strip().upper()
     if employer_flag in {"O", "OUI", "YES"}:
         employer_scope = "employer"
     elif employer_flag in {"N", "NON", "NO"}:
@@ -84,7 +87,7 @@ def _candidate_from_result(item: dict, query: str) -> dict | None:
         "employer_flag_at_head_office": employer_flag or None,
         "employee_range": employee_range or None,
         "employee_range_date": head_office.get("annee_tranche_effectif_salarie"),
-        "activity_code": head_office.get("activite_principale"),
+        "activity_code": item.get("activite_principale") or head_office.get("activite_principale"),
         "company_category": item.get("categorie_entreprise"),
         "creation_date": item.get("date_creation"),
         "employer_scope": employer_scope,

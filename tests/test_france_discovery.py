@@ -62,6 +62,19 @@ def test_rejects_fake_or_unverified_identity_fields():
     assert _candidate_from_result(valid_company(nature_juridique="1000"), "x") is None
 
 
+def test_employer_fields_are_read_from_top_level_official_search_response():
+    item = valid_company(siege={"adresse": "1 RUE TEST"})
+    item["caractere_employeur"] = "O"
+    item["tranche_effectif_salarie"] = "11"
+    item["activite_principale"] = "47.11A"
+    candidate = _candidate_from_result(item, "commerce")
+    assert candidate is not None
+    assert candidate["raw"]["employer_scope"] == "employer"
+    assert candidate["raw"]["employer_flag_at_head_office"] == "O"
+    assert candidate["raw"]["employee_range"] == "11"
+    assert candidate["raw"]["activity_code"] == "47.11A"
+
+
 def test_unknown_employer_flag_stays_unknown_not_auto_promoted():
     item = valid_company(siege={"caractere_employeur": "", "tranche_effectif_salarie": ""})
     candidate = _candidate_from_result(item, "services")

@@ -50,9 +50,9 @@ jobs:
         run: >-
           python -m crawler.france_discovery
           --db data/company_registry.sqlite3
-          --limit 30000
-          --pages-per-query 2
-          --max-queries 24
+          --limit 5000
+          --pages-per-query 1
+          --max-queries 6
           --output /tmp/france-discovery-report.json
 
       - name: Save the updated France company registry cache
