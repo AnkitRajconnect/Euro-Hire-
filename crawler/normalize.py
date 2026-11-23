@@ -172,11 +172,10 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         place = None
 
     role, level = classify(title, raw.get("department"))
-    # Unknown occupations are held back for review instead of being published
-    # under a broad "Other" category. Manual/service occupations are screened
-    # before normalisation in company_security.screen_vacancy().
-    if role == "other":
-        return None
+    # Keep legitimate professional roles even when the title is not covered by
+    # the current taxonomy. The UI already supports an "Other" filter; rejecting
+    # these jobs silently makes the board look much smaller than its sources.
+    # Manual/service occupations are screened before normalisation.
     salary = find_salary(desc[:6000] + " " + loc_text)
     language = detect_language(desc[:1500] or title)
 
