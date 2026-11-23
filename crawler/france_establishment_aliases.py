@@ -163,9 +163,16 @@ def sync_establishment_aliases(con, normalize_name: Callable[[str], set[str]],
                     ]
                     candidates = [(field, value) for field, value in pieces
                                   if value and value.upper() not in {"[ND]", "ND", "N/A"}]
-                    combined = " ".join(value for _, value in pieces[:3] if value and value.upper() not in {"[ND]", "ND", "N/A"}).strip()
-                    if combined and len([value for _, value in candidates if value in combined]) > 1:
-                        candidates.append(("enseigne_combined", combined))
+                    enseigne_parts = [
+                        value for _, value in pieces[:3]
+                        if value and value.upper() not in {"[ND]", "ND", "N/A"}
+                    ]
+                    combined = " ".join(enseigne_parts).strip()
+                    joined = "".join(enseigne_parts).strip()
+                    if combined and len(enseigne_parts) > 1:
+                        candidates.append(("enseigne_combined_spaced", combined))
+                    if joined and len(enseigne_parts) > 1 and joined != combined:
+                        candidates.append(("enseigne_combined_joined", joined))
 
                     seen_norms = set()
                     for field, alias in candidates:
