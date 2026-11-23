@@ -283,7 +283,7 @@ def test_duckdb_lambda_syntax_used_by_overture_query_is_supported():
         "SELECT list_filter("
         "[struct_pack(country := 'FR'), struct_pack(country := 'BE')], "
         "lambda a : a.country = 'FR')"
-    ).fetchone()[0]
+    ).fetchall()[0][0]
     assert len(rows) == 1
     assert rows[0]["country"] == "FR"
 
