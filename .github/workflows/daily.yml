@@ -39,10 +39,14 @@ jobs:
           node --check site/app.js
 
       - name: Discover public ATS boards without an employer allowlist
+        env:
+          EUROHIRE_CONTACT: https://github.com/${{ github.repository }}
         run: |
           python -m crawler.source_discovery --out site/data/boards.json --max-per-pattern 10000 --refresh-days 7
 
       - name: Read public job feeds across discovered boards
+        env:
+          EUROHIRE_CONTACT: https://github.com/${{ github.repository }}
         run: |
           python -m crawler.crawl --boards site/data/boards.json --max-boards 5000 --review-out /tmp/eurohire-review-queue.json --out site/data --workers 8
 
