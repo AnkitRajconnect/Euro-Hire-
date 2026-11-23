@@ -87,12 +87,12 @@ def test_france_only_filter_and_remote_rules():
 def test_classification():
     j = normalize({"id": "1", "title": "Senior Data Scientist", "url": "https://x.test/1", "location": "Paris"}, co(), NOW)
     assert (j["role"], j["level"]) == ("data", "senior")
-    j = normalize({"id": "2", "title": "Software Engineering Intern", "url": "https://x.test/2", "location": "Dublin"}, co(), NOW)
+    j = normalize({"id": "2", "title": "Software Engineering Intern", "url": "https://x.test/2", "location": "Paris, France"}, co(), NOW)
     assert (j["role"], j["level"]) == ("engineering", "intern")
 
 
 def test_snippet_is_truncated():
-    j = normalize({"id": "1", "title": "DevOps Engineer", "url": "https://x.test/1", "location": "Berlin",
+    j = normalize({"id": "1", "title": "DevOps Engineer", "url": "https://x.test/1", "location": "Paris, France",
                    "description": "word " * 500}, co(), NOW)
     assert len(j["snippet"]) <= 500
 
@@ -152,7 +152,7 @@ def test_personio_xml_and_domain_fallback():
     assert jobs[0]["url"] == "https://acme.jobs.personio.com/job/111"
     assert jobs[0]["location"] == "München" and "Wir suchen dich" in jobs[0]["description"]
     final = normalize(jobs[0], co(ats="personio"), NOW)
-    assert final["city"] == "Munich"
+    assert final is None  # Munich is outside the France-only job board
 
 
 def test_teamtailor_rss():
@@ -696,8 +696,8 @@ def test_curated_ashby_company_feed_publishes_real_postings_and_not_hybrid_as_re
         "title": "Senior Software Engineer",
         "jobUrl": "https://jobs.ashbyhq.com/linear/real-posting-1",
         "applyUrl": "https://jobs.ashbyhq.com/linear/real-posting-1",
-        "location": "Berlin, Germany",
-        "address": {"postalAddress": {"addressLocality": "Berlin", "addressCountry": "Germany"}},
+        "location": "Paris, France",
+        "address": {"postalAddress": {"addressLocality": "Paris", "addressCountry": "France"}},
         "isRemote": True,
         "workplaceType": "Hybrid",
         "department": "Engineering",
