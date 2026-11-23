@@ -65,7 +65,7 @@ def build_queue(db: Path, limit: int = 1000) -> list[dict]:
                 "domain_candidate": row["official_domain"],
                 "domain_verified": bool(row["domain_verified"]),
                 "official_registry_record": f"https://annuaire-entreprises.data.gouv.fr/entreprise/{siren}",
-                "next_action": "identify the employer's own website from independent evidence; verify the SIREN or legal name on that site before approval",
+                "next_action": "do not infer a domain; identify the employer's own website from independent evidence and verify its SIREN or legal name there before approval",
             })
 
         if result:
