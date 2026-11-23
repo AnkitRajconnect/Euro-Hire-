@@ -36,27 +36,19 @@
       <form id="company-search" class="company-search-form">
         <label class="company-query-field" for="company-query">
           <span class="field-label">Company name or 20-character LEI</span>
-          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" value="Microsoft" placeholder="Try Microsoft, Volvo, Siemens…" required>
+          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" value="Orange" placeholder="Try Orange, BNP Paribas, Carrefour…" required>
         </label>
         <label class="company-filter-field" for="country-filter">
           <span class="field-label">Country</span>
-          <select id="country-filter" name="country">
-            <option value="FR" selected>France</option>
-            <option value="AT">Austria</option><option value="BE">Belgium</option><option value="CH">Switzerland</option>
-            <option value="DE">Germany</option><option value="DK">Denmark</option><option value="ES">Spain</option>
-            <option value="FI">Finland</option><option value="FR">France</option><option value="GB">United Kingdom</option>
-            <option value="IE">Ireland</option><option value="IT">Italy</option><option value="LU">Luxembourg</option>
-            <option value="NL">Netherlands</option><option value="NO">Norway</option><option value="PL">Poland</option>
-            <option value="SE">Sweden</option><option value="US">United States</option>
-          </select>
+          <select id="country-filter" name="country" aria-label="Country"><option value="FR" selected>France</option></select>
         </label>
         <button class="primary-button company-search-button" type="submit">Search companies <span aria-hidden="true">→</span></button>
       </form>
       <div class="quick-searches">
         <span>Try:</span>
-        <button type="button" data-query="Microsoft">Microsoft</button>
-        <button type="button" data-query="Volvo">Volvo</button>
-        <button type="button" data-query="Siemens">Siemens</button>
+        <button type="button" data-query="Orange">Orange</button>
+        <button type="button" data-query="BNP Paribas">BNP Paribas</button>
+        <button type="button" data-query="Carrefour">Carrefour</button>
         <button type="button" data-query="BNP Paribas">BNP Paribas</button>
       </div>
     </section>
