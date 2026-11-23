@@ -76,6 +76,26 @@ def _candidate_from_result(item: dict, query: str) -> dict | None:
     else:
         employer_scope = _classify_fr_employer_range(employee_range)
 
+    address_keys = (
+        "siret", "numero_voie", "indice_repetition", "type_voie", "libelle_voie",
+        "complement_adresse", "code_postal", "commune", "departement",
+        "libelle_commune", "coordonnees", "geo_adresse",
+    )
+    head_office_address = {
+        key: head_office.get(key) for key in address_keys
+        if head_office.get(key) not in (None, "")
+    }
+    name_aliases = []
+    for alias in (
+        item.get("nom_complet"), item.get("nom_raison_sociale"),
+        head_office.get("enseigne1"), head_office.get("enseigne2"),
+        head_office.get("enseigne3"),
+        head_office.get("denomination_usuelle_etablissement"),
+    ):
+        alias = str(alias or "").strip()
+        if alias and alias != name and alias not in name_aliases:
+            name_aliases.append(alias)
+
     official_record = f"https://annuaire-entreprises.data.gouv.fr/entreprise/{siren}"
     api_record = {
         "discovery_source": API_SOURCE,
@@ -90,6 +110,8 @@ def _candidate_from_result(item: dict, query: str) -> dict | None:
         "activity_code": item.get("activite_principale") or head_office.get("activite_principale"),
         "company_category": item.get("categorie_entreprise"),
         "creation_date": item.get("date_creation"),
+        "head_office_address": head_office_address,
+        "name_aliases": name_aliases,
         "employer_scope": employer_scope,
         "website_status": "not_discovered",
         "verification_note": (
