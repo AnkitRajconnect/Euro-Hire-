@@ -143,7 +143,7 @@
   }
 
   function filterRecords(records) {
-    const country = $("country-filter").value;
+    const country = $("country-filter").value || "FR";
     const status = $("entity-status-filter").value;
     return records.filter((record) => (!country || record.country === country) && (!status || record.entityStatus === status));
   }
