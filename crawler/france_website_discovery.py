@@ -861,9 +861,13 @@ def _legal_notice_urls(home_url: str, homepage: str) -> list[str]:
         if (parsed.scheme == "https" and parsed.hostname and _same_site(parsed.hostname, root_host)
                 and any(term in text for term in LEGAL_LINK_TERMS)):
             urls.append(full)
+    # Prefer links explicitly identified as French legal information. Only
+    # probe conventional paths when the homepage exposes no legal-notice link.
+    linked = list(dict.fromkeys(urls))
+    if linked:
+        return linked[:5]
     origin = f"https://{root_host}"
-    urls.extend(urljoin(origin, path) for path in LEGAL_PATHS)
-    return list(dict.fromkeys(urls))[:12]
+    return list(dict.fromkeys(urljoin(origin, path) for path in LEGAL_PATHS))[:5]
 
 
 def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
