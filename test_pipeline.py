@@ -1,9 +1,10 @@
-"""Tests for the ATS-first French job discovery pipeline."""
+"""Tests for the Europe-wide ATS job discovery pipeline."""
 from __future__ import annotations
 
 from ats_pipeline import (
     choose_insee_result, export_data, fetch_ats_board, init_db, is_france_location,
     normalise_wttj_hit, parse_wttj_env, store_board_result, upsert_company, upsert_job,
+    is_europe_location, is_recent_posting, is_professional_job,
 )
 from commoncrawl_index import board_record, surt_prefix, token_from_url
 
@@ -17,6 +18,20 @@ def test_france_location_requires_france_evidence():
     assert is_france_location("Remote", None)[0] is False
     assert is_france_location("New York, USA")[0] is False
     assert is_france_location("Paris, France", "US")[0] is False
+
+def test_europe_location_and_29_day_freshness():
+    from datetime import date
+    assert is_europe_location("Berlin", "DE") == (True, "DE")
+    assert is_europe_location("Amsterdam, Netherlands") == (True, "NL")
+    assert is_europe_location("London, UK") == (True, "GB")
+    assert is_europe_location("Remote Europe") == (True, "EU")
+    assert is_europe_location("New York, USA", "US") == (False, None)
+    assert is_recent_posting("2026-11-23", today=date(2026, 11, 23))
+    assert is_recent_posting("2026-10-25", today=date(2026, 11, 23))
+    assert not is_recent_posting("2026-10-24", today=date(2026, 11, 23))
+    assert not is_recent_posting(None, today=date(2026, 11, 23))
+    assert is_professional_job("Account Executive")
+    assert not is_professional_job("Plumber")
 
 
 def test_commoncrawl_board_tokens_are_provider_agnostic():
@@ -155,7 +170,7 @@ def test_wttj_jobs_are_grouped_by_employer_without_a_fake_board(tmp_path):
             "company_key": f"wttj:{slug}", "company_ats_type": "wttj",
             "company_ats_slug": slug, "company_name": name,
             "title": "Product Manager", "apply_url": f"https://jobs.example/{job_id}",
-            "location": "Paris, France", "country_code": "FR",
+            "location": "Paris, France", "country_code": "FR", "posted_at": "2026-11-20",
         })
     kept = store_board_result(
         conn, {"ats_type": "wttj", "ats_slug": "france-index"},
