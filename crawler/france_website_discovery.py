@@ -875,6 +875,7 @@ def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
     urls = _legal_notice_urls(home.url, home.text)
     saw_legal_page = False
     other_ids: set[str] = set()
+    siren_legal_urls: dict[str, str] = {}
     for legal_url in urls:
         try:
             page = _get_same_site(http, legal_url, domain)
@@ -888,6 +889,8 @@ def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
             matched = sorted(sirens & expected)[0]
             return "verified_siren_match", f"French legal notice contains matching SIREN/SIRET {matched}", matched, legal_url
         other_ids.update(sirens)
+        for siren in sirens:
+            siren_legal_urls.setdefault(siren, legal_url)
     # If a first-party legal notice contains exactly one labelled SIREN/SIRET,
     # that identifier is stronger than the place/trading-name association.
     # It can identify the actual legal employer even when the storefront uses
@@ -897,7 +900,7 @@ def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
         return "verified_siren_match", (
             f"First-party French legal notice identifies SIREN/SIRET {matched}; "
             "the legal identifier will be resolved against the active French registry."
-        ), matched, urls[0] if urls else None
+        ), matched, siren_legal_urls.get(matched)
     if other_ids:
         return "needs_manual_review", (
             "Legal notice contains multiple SIREN/SIRET identifiers without a unique registry match: "
@@ -945,7 +948,6 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
         status, note, matched_siren, verified_legal_notice_url = _verify_one(http, row)
         checked += 1
         if status == "verified_siren_match":
-            verified += 1
             company = con.execute(
                 """SELECT id,official_domain,domain_verified FROM companies
                    WHERE country='FR' AND registry_id=? AND registry_status='active' AND legal_person=1""",
@@ -973,6 +975,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
                            WHERE id=?""",
                         (row["candidate_domain"], now_iso(), now_iso(), company["id"]),
                     )
+                    verified += 1
                 else:
                     status = "verified_alternative_domain_needs_review"
                     note += "; a different verified company domain is already recorded"
