@@ -888,7 +888,7 @@ def ingest_french_tech_next40_120(con, http: Http) -> dict:
                 "source": "French Tech Next40/120",
                 "source_url": FRENCH_TECH_NEXT40_120_URL,
                 "source_website_url": website_url,
-                "retrieved_at": now_iso(),
+                "source_release": cohort_release,
                 "licence_status": "Licence not assessed; retained as a source pointer only, subject to source terms.",
             }],
             place_category="startup_scaleup_official_cohort",
