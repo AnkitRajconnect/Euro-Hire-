@@ -19,7 +19,7 @@ concurrency:
 jobs:
   crawl-and-package:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -34,6 +34,23 @@ jobs:
 
       - name: Install crawler dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Restore the France company registry cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/company_registry.sqlite3
+          key: france-sirene-${{ github.run_id }}
+          restore-keys: |
+            france-sirene-
+
+      - name: Sync the official French SIRENE company register
+        run: python -m crawler.france_registry_sync --db data/company_registry.sqlite3
+
+      - name: Save the updated France company registry cache
+        uses: actions/cache/save@v4
+        with:
+          path: data/company_registry.sqlite3
+          key: france-sirene-${{ github.run_id }}
 
       - name: Run the automated test suite
         run: python -m pytest -q
