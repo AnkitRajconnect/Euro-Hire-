@@ -225,6 +225,16 @@ def test_vacancy_must_match_approved_ats_tenant():
     assert validate_vacancy_source("http://boards.greenhouse.io/acme/jobs/12", company)[0] is False
 
 
+def test_workable_canonical_short_job_urls_are_accepted_only_from_workable():
+    company = co()
+    company["ats"] = "workable"
+    company["ats_slug"] = "acme"
+    assert validate_vacancy_source("https://apply.workable.com/acme/j/ABC123/apply", company)[0] is True
+    assert validate_vacancy_source("https://apply.workable.com/j/ABC123", company)[0] is True
+    assert validate_vacancy_source("https://apply.workable.com/other/j/ABC123", company)[0] is False
+    assert validate_vacancy_source("https://evil.example/j/ABC123", company)[0] is False
+
+
 def test_manual_trade_and_payment_scam_are_blocked():
     company = co()
     raw = {"title": "Plumber", "url": "https://boards.greenhouse.io/acme/jobs/1", "description": ""}
