@@ -627,8 +627,73 @@ def build_report(con, release: str, ingest: dict | None, verification: dict) -> 
     }
 
 
+def export_verified_websites(con, output: Path) -> int:
+    """Publish only domains independently matched to a company's SIREN/SIRET."""
+    rows = con.execute(
+        """SELECT c.registry_id,c.legal_name,c.trading_name,c.official_domain,
+                  c.domain_checked_at,c.registry_source,c.raw_json,
+                  w.source_record_ids_json,w.source_release,w.address,w.locality,
+                  w.postcode,w.region,w.verification_note
+           FROM companies c
+           JOIN france_website_candidates w
+             ON w.candidate_domain=c.official_domain
+            AND w.status='verified_siren_match'
+            AND json_valid(w.candidate_registry_ids_json)
+            AND EXISTS (
+              SELECT 1 FROM json_each(w.candidate_registry_ids_json) j
+              WHERE CAST(j.value AS TEXT)=c.registry_id
+            )
+           WHERE c.country='FR' AND c.registry_status='active'
+             AND c.legal_person=1 AND c.domain_verified=1
+             AND c.domain_method='siren_in_legal_notice'
+           ORDER BY COALESCE(c.trading_name,c.legal_name),c.registry_id"""
+    ).fetchall()
+    companies = []
+    seen = set()
+    for row in rows:
+        if row["registry_id"] in seen:
+            continue
+        seen.add(row["registry_id"])
+        try:
+            raw = json.loads(row["raw_json"] or "{}")
+        except (TypeError, ValueError):
+            raw = {}
+        companies.append({
+            "name": row["trading_name"] or row["legal_name"],
+            "legal_name": row["legal_name"],
+            "siren": row["registry_id"],
+            "country": "FR",
+            "official_website": f"https://{row['official_domain']}/",
+            "registry_record": f"https://annuaire-entreprises.data.gouv.fr/entreprise/{row['registry_id']}",
+            "head_office_address": raw.get("head_office_address") or row["address"],
+            "city": row["locality"],
+            "postcode": row["postcode"],
+            "region": row["region"],
+            "activity_code": raw.get("activity_code"),
+            "employee_range": raw.get("employee_range"),
+            "verified_at": row["domain_checked_at"],
+            "verification_method": "Matching SIREN/SIRET found in first-party French legal notice",
+            "evidence": {
+                "discovery_source": "Overture Maps Places",
+                "source_release": row["source_release"],
+                "place_record_ids": json.loads(row["source_record_ids_json"] or "[]"),
+                "legal_notice_result": row["verification_note"],
+            },
+        })
+    payload = {
+        "country": "FR",
+        "generated_at": now_iso(),
+        "count": len(companies),
+        "verification_standard": "Only an exact same-company SIREN/SIRET match in an accessible first-party legal notice is included.",
+        "companies": companies,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return len(companies)
+
+
 def run(db: Path, *, verify_limit: int = 1000, report_path: Path | None = None,
-        force_import: bool = False) -> dict:
+        websites_output_path: Path | None = None, force_import: bool = False) -> dict:
     http = Http(min_delay=0.5, timeout=25, retries=2)
     catalog = http.get_json(STAC_CATALOG, headers={"Accept": "application/json"})
     release = str(catalog.get("latest") or "")
@@ -649,7 +714,11 @@ def run(db: Path, *, verify_limit: int = 1000, report_path: Path | None = None,
         verification = verify_pending_candidates(
             con, Http(min_delay=0.5, timeout=20, retries=1), limit=verify_limit
         )
+        verified_websites = export_verified_websites(
+            con, websites_output_path
+        ) if websites_output_path else 0
         report = build_report(con, release, ingest, verification)
+        report["verified_websites_exported"] = verified_websites
         if report_path:
             report_path.parent.mkdir(parents=True, exist_ok=True)
             report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -665,10 +734,12 @@ def main(argv=None) -> int:
     parser.add_argument("--verify-limit", type=int, default=1000,
                         help="Rolling verification batch size; cursor rotates through all candidates")
     parser.add_argument("--report", default="site/data/france-website-discovery-report.json")
+    parser.add_argument("--websites-output", default="site/data/france-company-websites.json")
     parser.add_argument("--force-import", action="store_true")
     args = parser.parse_args(argv)
     run(Path(args.db), verify_limit=args.verify_limit,
-        report_path=Path(args.report), force_import=args.force_import)
+        report_path=Path(args.report), websites_output_path=Path(args.websites_output),
+        force_import=args.force_import)
     return 0
 
 
