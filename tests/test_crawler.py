@@ -440,7 +440,8 @@ def test_discovery_revokes_career_source_removed_from_official_company_site(tmp_
     db = tmp_path / "registry.sqlite3"
     con = connect(db)
     upsert_candidate(con, country="FR", registry_id="123456789", legal_name="Example SAS",
-                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True)
+                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True,
+                     raw={"employer_scope": "employer", "employee_range": "11"})
     set_domain(con, "FR", "123456789", "https://example.fr", confirmed=True)
     discover_company_sources(con, "FR", "123456789", FakeHttp({
         "https://example.fr": '<a href="https://example.fr/careers">Careers</a>',
