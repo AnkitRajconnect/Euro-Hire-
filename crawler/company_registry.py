@@ -44,7 +44,7 @@ PRH_SEARCH = "https://avoindata.prh.fi/opendata-ytj-api/v3/companies"
 BRREG_SEARCH = "https://data.brreg.no/enhetsregisteret/api/enheter"
 KVK_SEARCH = "https://api.kvk.nl/api/v2/zoeken"
 KVK_PROFILE = "https://api.kvk.nl/api/v1/basisprofielen"
-CAREER_TERMS = re.compile(r"career|careers|job|jobs|vacanc|werken.?bij|recrut|emploi|karriere|stellenangebot|offre.?d'emploi|nous.?rejoindre", re.I)
+CAREER_TERMS = re.compile(r"career|careers|job|jobs|vacanc|werken.?bij|recrut|emploi|carri|karriere|stellenangebot|offre.?d.?emploi|offres?.?d.?emploi|nous.?rejoindre|candidature|alternance|stage", re.I)
 
 SCHEMA = """
 PRAGMA foreign_keys=ON;
