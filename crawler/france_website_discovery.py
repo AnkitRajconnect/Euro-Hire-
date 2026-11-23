@@ -819,6 +819,7 @@ def ingest_french_tech_next40_120(con, http: Http) -> dict:
     declare a reusable bulk-data licence, so we retain its URL and do not copy
     descriptive text or claim an open-data licence.
     """
+    ensure_discovery_schema(con)
     if not http.allowed_by_robots(FRENCH_TECH_NEXT40_120_URL):
         raise PermissionError("Mission French Tech robots.txt disallows the cohort page")
     page = http.get_text(FRENCH_TECH_NEXT40_120_URL)
@@ -888,7 +889,7 @@ def ingest_french_tech_next40_120(con, http: Http) -> dict:
                 "source_url": FRENCH_TECH_NEXT40_120_URL,
                 "source_website_url": website_url,
                 "retrieved_at": now_iso(),
-                "licence_status": "No bulk-data reuse licence identified on the source page; retained as a discovery pointer only.",
+                "licence_status": "Licence not assessed; retained as a source pointer only, subject to source terms.",
             }],
             place_category="startup_scaleup_official_cohort",
         )
