@@ -8,6 +8,7 @@ from crawler.france_website_discovery import (
     SCHEMA,
     _canonical_host,
     _company_name_index,
+    _upsert_candidate,
     extract_legal_sirens,
     export_verified_websites,
     name_keys,
@@ -212,4 +213,39 @@ def test_sirene_establishment_alias_links_shop_name_to_legal_employer(tmp_path):
     index = _company_name_index(con)
 
     assert index["maison du sport"]["123456789"] == "exact_establishment_alias"
+    con.close()
+
+def test_new_registry_name_match_requeues_previously_mismatched_candidate(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = add_company_and_candidate(
+        db, candidate_sirens=["111111111"], status="legal_identifier_mismatch",
+        last_checked_at="2026-11-20T00:00:00+00:00"
+    )
+    candidate = con.execute("SELECT * FROM france_website_candidates").fetchone()
+
+    _upsert_candidate(
+        con,
+        place_id="overture-place-2",
+        place_name="EXEMPLE INDUSTRIE",
+        website_url="https://candidate.fr/",
+        domain="candidate.fr",
+        normalized_name="exemple industrie",
+        registry_ids=["123456789"],
+        match_method="exact_establishment_alias",
+        address="1 Rue Exemple",
+        locality="Paris",
+        postcode="75001",
+        region="Île-de-France",
+        confidence=0.9,
+        release="2026-11-18.0",
+    )
+    con.commit()
+    refreshed = con.execute("SELECT * FROM france_website_candidates").fetchone()
+
+    assert set(json.loads(refreshed["candidate_registry_ids_json"])) == {
+        "111111111", "123456789"
+    }
+    assert refreshed["status"] == "pending_verification"
+    assert refreshed["last_checked_at"] is None
+    assert refreshed["verification_note"] is None
     con.close()
