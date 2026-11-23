@@ -20,6 +20,8 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -40,7 +42,7 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "Refresh European job vacancies $(date -u +%F-%H%M)"
             for attempt in 1 2 3 4 5; do
-              git fetch origin main
+              git fetch origin main:refs/remotes/origin/main
               git rebase origin/main
               if git push origin HEAD:main; then
                 exit 0
