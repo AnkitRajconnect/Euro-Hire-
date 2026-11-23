@@ -945,7 +945,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
             SELECT * FROM (
               SELECT w.*,
                      ROW_NUMBER() OVER (
-                       PARTITION BY w.candidate_domain
+                       PARTITION BY w.candidate_domain,w.candidate_registry_ids_json
                        ORDER BY CASE WHEN w.status='verified_siren_match' THEN 0 ELSE 1 END, w.id
                      ) AS domain_rank
               FROM france_website_candidates w
@@ -959,9 +959,12 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
 
     rows = select_unique_rows(">", last_id, limit)
     if len(rows) < limit and last_id:
-        already = {row["candidate_domain"] for row in rows}
+        already = {(row["candidate_domain"], row["candidate_registry_ids_json"]) for row in rows}
         wrapped = select_unique_rows("<=", last_id, limit - len(rows))
-        rows.extend(row for row in wrapped if row["candidate_domain"] not in already)
+        rows.extend(
+            row for row in wrapped
+            if (row["candidate_domain"], row["candidate_registry_ids_json"]) not in already
+        )
 
     if isinstance(http, Http):
         def check_row(row):
@@ -1044,10 +1047,8 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
         # repeatedly downloading the same site for each place record.
         duplicates = con.execute(
             """SELECT id,candidate_registry_ids_json FROM france_website_candidates
-               WHERE candidate_domain=? AND id<>?
-                 AND status IN ('pending_verification','unreachable_retry','robots_disallowed',
-                                'legal_notice_not_found','needs_manual_review','verified_registry_id_not_loaded')""",
-            (row["candidate_domain"], row["id"]),
+               WHERE candidate_domain=? AND candidate_registry_ids_json=? AND id<>?""",
+            (row["candidate_domain"], row["candidate_registry_ids_json"], row["id"]),
         ).fetchall()
         for duplicate in duplicates:
             try:
@@ -1057,18 +1058,21 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
             if status == "verified_siren_match" and resolved_company and matched_siren:
                 duplicate_ids = sorted(set(duplicate_ids) | {matched_siren})
                 duplicate_status = "verified_siren_match"
-                duplicate_note = f"Same root domain verified through its first-party legal notice for SIREN {matched_siren}"
+                duplicate_note = (
+                    f"Same company identity group verified through first-party legal notice for SIREN {matched_siren}"
+                )
             else:
                 duplicate_status = status
-                duplicate_note = f"Same root domain checked: {note}"[:500]
+                duplicate_note = f"Same company identity group checked: {note}"[:500]
             con.execute(
                 """UPDATE france_website_candidates
                    SET candidate_registry_ids_json=?,matched_company_count=?,
+                       match_score=CASE WHEN ?='verified_siren_match' THEN 100 ELSE match_score END,
                        status=?,last_checked_at=?,attempt_count=attempt_count+1,
                        verification_note=?,verified_legal_notice_url=?
                    WHERE id=?""",
                 (json.dumps(duplicate_ids), len(set(duplicate_ids)), duplicate_status,
-                 checked_at, duplicate_note, verified_legal_notice_url, duplicate["id"]),
+                 duplicate_status, checked_at, duplicate_note, verified_legal_notice_url, duplicate["id"]),
             )
 
         # Revoke previously approved proof if the legal notice no longer
