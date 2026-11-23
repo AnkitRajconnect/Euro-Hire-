@@ -1,10 +1,10 @@
 {
- "generated_at": "2026-11-23T15:40:37+00:00",
+ "generated_at": "2026-11-23T15:48:39+00:00",
  "feeds_ok": 1,
  "feeds_total": 1,
- "jobs_published": 0,
- "jobs_rejected": 10,
- "jobs_held_for_review": 0,
+ "jobs_published": 5,
+ "jobs_rejected": 4,
+ "jobs_held_for_review": 1,
  "companies": [
   {
    "company": "Hugging Face",
@@ -12,11 +12,12 @@
    "ats": "workable",
    "ok": true,
    "raw": 10,
-   "kept": 0,
-   "rejected": 10,
-   "review": 0,
+   "kept": 5,
+   "rejected": 4,
+   "review": 1,
    "reasons": {
-    "vacancy URL does not match the approved career-board host and identifier": 10
+    "outside Europe or occupation not in launch taxonomy": 4,
+    "occupation is not in the approved professional-role taxonomy": 1
    },
    "error": null
   }
