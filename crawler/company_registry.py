@@ -314,8 +314,13 @@ def discover_company_sources(con: sqlite3.Connection, country: str, registry_id:
                 candidates.append({"ats": ats, "slug": slug, "career_url": page_url, "evidence_url": page_url,
                                    "evidence_type": "linked_from_verified_company_domain", "auto_approve": True})
         else:
+            # This page was linked directly from the verified employer homepage
+            # and is on the employer's own domain. It is safe to crawl with the
+            # JSON-LD-only adapter; extracted vacancy URLs are separately
+            # restricted to this same verified host before publication.
             candidates.append({"ats": "jsonld", "slug": f"{country.lower()}-{registry_id}", "career_url": page_url,
-                               "evidence_url": page_url, "evidence_type": "custom_career_page_needs_review"})
+                               "evidence_url": home,
+                               "evidence_type": "linked_from_verified_company_domain", "auto_approve": True})
     # One board should have one canonical source row. Prefer the direct ATS
     # link from the company site over a generic homepage embed when both exist.
     by_board: dict[tuple[str, str], dict] = {}
@@ -335,11 +340,16 @@ def discover_company_sources(con: sqlite3.Connection, country: str, registry_id:
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(company_id, ats, ats_slug) DO UPDATE SET
             approved=CASE WHEN career_sources.career_url != excluded.career_url
-                          THEN excluded.approved ELSE career_sources.approved END,
+                          THEN excluded.approved
+                          ELSE MAX(career_sources.approved, excluded.approved) END,
             approval_method=CASE WHEN career_sources.career_url != excluded.career_url
-                                 THEN excluded.approval_method ELSE COALESCE(career_sources.approval_method, excluded.approval_method) END,
+                                 THEN excluded.approval_method
+                                 WHEN excluded.approved=1 THEN excluded.approval_method
+                                 ELSE career_sources.approval_method END,
             approved_at=CASE WHEN career_sources.career_url != excluded.career_url
-                             THEN excluded.approved_at ELSE COALESCE(career_sources.approved_at, excluded.approved_at) END,
+                             THEN excluded.approved_at
+                             WHEN excluded.approved=1 THEN COALESCE(career_sources.approved_at, excluded.approved_at)
+                             ELSE career_sources.approved_at END,
             career_url=excluded.career_url, evidence_url=excluded.evidence_url,
             evidence_type=excluded.evidence_type, last_checked=excluded.last_checked,
             last_status=CASE WHEN excluded.approved=1 THEN 'auto_approved_official_company_link'
@@ -351,11 +361,13 @@ def discover_company_sources(con: sqlite3.Connection, country: str, registry_id:
            "auto_approved_official_company_link" if auto_approved else "discovered_pending_review",
            json.dumps(item, ensure_ascii=False)))
     discovered_keys = {(item["ats"], item["slug"]) for item in unique}
-    existing_sources = con.execute("SELECT id,ats,ats_slug FROM career_sources WHERE company_id=? AND approved=1",
+    existing_sources = con.execute("SELECT id,ats,ats_slug FROM career_sources WHERE company_id=?",
                                    (row["id"],)).fetchall()
     for existing_source in existing_sources:
         key = (existing_source["ats"], existing_source["ats_slug"])
         if key not in discovered_keys:
+            # Retire pending candidates too. Otherwise stale review-only rows
+            # would keep forcing repeated discovery attempts forever.
             con.execute("UPDATE career_sources SET approved=0, approval_method=NULL, approved_at=NULL, last_checked=?, last_status='no_longer_linked_from_verified_company_site' WHERE id=?",
                         (now_iso(), existing_source["id"]))
     con.execute("UPDATE companies SET career_discovery_checked_at=?, career_discovery_status=? WHERE id=?",
@@ -1225,8 +1237,16 @@ def discover_all_sources(con: sqlite3.Connection, http: Http, country: str | Non
     query += " AND c.registry_checked_at IS NOT NULL AND substr(c.registry_checked_at,1,10) >= date('now','-90 day') AND substr(c.registry_checked_at,1,10) <= date('now','+1 day')"
     query += " AND c.domain_checked_at IS NOT NULL AND substr(c.domain_checked_at,1,10) >= date('now','-90 day') AND substr(c.domain_checked_at,1,10) <= date('now','+1 day')"
     if only_without_sources:
-        query += " AND (c.career_discovery_checked_at IS NULL OR substr(c.career_discovery_checked_at,1,10) <= date('now','-90 day'))"
-        query += " AND (c.career_discovery_attempted_at IS NULL OR substr(c.career_discovery_attempted_at,1,10) <= date('now','-7 day'))"
+        # Revisit review-only JSON-LD sources after the discovery rules improve.
+        # Once the source is promoted or no longer linked, it leaves this queue.
+        pending_custom = """EXISTS (
+            SELECT 1 FROM career_sources pending
+            WHERE pending.company_id=c.id AND pending.ats='jsonld'
+              AND pending.approved=0
+              AND pending.last_status='discovered_pending_review'
+        )"""
+        query += f" AND ((c.career_discovery_checked_at IS NULL OR substr(c.career_discovery_checked_at,1,10) <= date('now','-90 day')) OR {pending_custom})"
+        query += f" AND ((c.career_discovery_attempted_at IS NULL OR substr(c.career_discovery_attempted_at,1,10) <= date('now','-7 day')) OR {pending_custom})"
     query += " ORDER BY c.country,c.legal_name,c.registry_id LIMIT ?"
     params.append(max(1, min(int(limit), 5000)))
     rows = con.execute(query, params).fetchall()
