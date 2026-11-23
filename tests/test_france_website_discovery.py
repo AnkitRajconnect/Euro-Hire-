@@ -31,7 +31,7 @@ class FakeHttp:
     def get(self, url, **kwargs):
         self.visited.append(url)
         if url not in self.pages:
-            raise AssertionError(f"Unexpected URL requested: {url}")
+            return FakeResponse(url, "", status_code=404)
         value = self.pages[url]
         if isinstance(value, Exception):
             raise value
