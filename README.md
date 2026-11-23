@@ -1,67 +1,92 @@
 # Euro-Hire
 
-A Europe-wide job discovery site that reads public employer ATS feeds and displays current vacancies on a searchable list and map.
+Euro-Hire discovers public ATS career boards, identifies boards with live jobs in France, enriches company identities against the open French government company-search API, and refreshes French vacancies daily.
 
-## No employer whitelist
+## Two-stage pipeline
 
-The crawler has no fixed employer-name list and no seven-company cap. A weekly discovery task queries the free Common Crawl URL index for public career-board URLs, identifies board IDs by ATS provider, and writes the results to site/data/boards.json. The crawler then calls each discovered board's public job feed.
+### 1. Weekly company discovery
 
-The Common Crawl index is a free discovery source. Job details come from the employer's own live public ATS feed.
+discover_companies.py runs every Sunday at 02:00 UTC.
 
-## Public board adapters
+- Starts with a public, MIT-licensed Common Crawl measurement snapshot and expands candidates from Common Crawl's free S3-hosted cluster.idx files using HTTP byte ranges.
+- It does not use the unstable Common Crawl CDX query API for bulk discovery.
+- Every candidate slug is re-probed against the employer's live public job feed. A source is stored only when its current board contains at least one France-based role.
+- Each board display name is searched against the official API Recherche d'entreprises. A SIREN is linked only when a single exact normalized name match is found.
+- If a brand or trading name cannot be matched safely, its public jobs are still retained with a nullable SIREN. No legal identity is guessed.
 
-The code supports public, unauthenticated job-listing routes for:
+### 2. Daily job sync
 
-- Greenhouse Job Board API
-- Lever Postings API, including the EU host
-- Ashby Public Job Postings API
-- SmartRecruiters public postings
-- Workable public careers widget
-- Personio XML feed, when the employer has enabled it
-- Teamtailor public RSS
-- Workday public career-site search endpoint
-- Recruitee public offers route (automatically disabled from 10 February 2027 because the vendor requires an employer token)
-- Pinpoint public postings.json
-- BambooHR public careers list
-- JazzHR public XML job export
-- Breezy HR public careers JSON
-- Keka public career portal feed
-- Homerun public Atom feed
-- Gem Job Board API: public job-post reads; application submission is not used
-- Rippling public hosted-board jobs feed
+sync_jobs.py runs every day at 06:00 UTC.
 
-No paid job-data provider is used. Private ATS APIs that require employer credentials, a paid account or OAuth approval are excluded. A public feed can still be disabled by an employer, and the provider can change the interface. Failed feeds are reported independently instead of blocking other companies.
+- Reads the discovered ATS sources from data/jobs.db.
+- Refreshes each public board asynchronously with httpx.
+- Keeps current France-based jobs and stores only the job fields needed by the site.
+- Removes personal email addresses and phone numbers from job descriptions before persistence.
+- Expires a job only after its own source board was successfully fetched and no longer returned it. A 403, 429, 5xx, timeout or other failed source does not expire its jobs.
+- If every feed fails, the previous JSON and CSV exports are preserved.
 
-## Discovery and refresh
+## Public ATS routes
 
-1. Read the latest Common Crawl collection metadata.
-2. Search the URL index for the supported ATS board URL patterns.
-3. Extract and deduplicate public board IDs, retaining previous discoveries.
-4. Crawl a rotating daily batch (up to 5,000 boards), prioritising boards not checked recently.
-5. Save the board index, current jobs and a per-provider report.
+These are anonymous public job-board reads, not private recruiting APIs:
 
-The index is refreshed weekly and the job feeds are checked daily. The website contains no hard-coded employer list.
+| Provider | Public route | Notes |
+|---|---|---|
+| Greenhouse | Job Board API | Public published jobs |
+| Lever | Postings API | 1 request/second crawl delay respected |
+| Ashby | Public Job Posting API | Published jobs |
+| Workable | Public careers widget | Lower request rate to avoid throttling |
+| Breezy HR | Public /json board | Public career-board response |
+| Recruitee | Public offers endpoint | Automatically disabled on 10 February 2027 when the published token requirement takes effect |
+| Teamtailor | Public jobs RSS | RSS feed only |
+| Gem | Public Job Board API | Job reads are public; application submission is never called |
+| Pinpoint | Public postings.json | Documented public jobs endpoint |
+| BambooHR | Public careers list | Employer-hosted career-board endpoint |
+| Rippling | Public hosted-board jobs feed | No private Recruiting API credentials |
+| Workday | Public career-site search endpoint | Tenant robots.txt checked before each board is read |
 
-## Location and publication
+SmartRecruiters and Personio are deliberately excluded. Independent live and archived robots checks found the relevant public feed paths disallowed. Private ATS APIs, paid data providers, employer account tokens, OAuth and candidate-management endpoints are not used.
 
-- Physical jobs must resolve to a European country or city.
-- Explicit Remote Europe roles are mapped to a Europe-wide marker.
-- Generic remote jobs are accepted only for employers whose headquarters are known to be in Europe.
-- Job URLs must use HTTPS. URLs returned directly by a validated public ATS feed may use the employer's own application host; untrusted URLs must match the configured ATS board.
-- Manual/service roles and payment scams are rejected. Suspicious recruitment language is held for review.
-- Closed jobs disappear after their board is successfully checked. Jobs from boards not yet reached in the current rotation are retained.
-- If every checked feed fails, the last successful jobs file is preserved.
+Workday's endpoint is an undocumented public career-site endpoint, not a private HCM API. It is only called after the exact tenant robots.txt path has been checked and allowed. The upstream open-ats-feed snapshot is a candidate source only. Its board slugs and counts are re-verified against live feeds and are not copied into Euro-Hire source code. Attribution and the upstream MIT licence are retained here: https://github.com/veresk06/open-ats-feed/blob/main/LICENSE.
+
+## French government data and privacy
+
+The government API allows a maximum of 7 requests/second per IP. Euro-Hire uses a 5 requests/second limiter and sends a descriptive User-Agent.
+
+A legal entity is linked only when all of these checks pass:
+- etat_administratif is A
+- nature_juridique is not 1000
+- statut_diffusion is O
+- Exactly one returned legal name, full name, commercial name or acronym matches the board's normalized display name.
+
+The government API already excludes non-diffusible entities; the explicit status check is retained as an additional safeguard. The pipeline never reads or stores dirigeants, personal emails or telephone fields. Public job descriptions are cleaned of email addresses and phone numbers before they are saved.
+
+SIREN is nullable. A brand or trading name is not forced into an unrelated legal entity. This makes the registry an enrichment layer, not a publication gate for valid public vacancies.
+
+## Database and exports
+
+- data/jobs.db: SQLite companies, ATS sources and jobs.
+- data/active_jobs.json: active France jobs with SIREN and NAF fields where a legal match exists.
+- data/active_jobs.csv: flat export.
+- site/data/jobs.json: frontend-compatible export used by the existing Euro-Hire website.
+- data/discovery_report.json and data/sync_report.json: coverage and sync outcomes.
+
+The database uses an internal company_id primary key and a unique nullable SIREN. This is deliberate: some public ATS brands cannot be confidently matched to a legal entity, and those boards should not be discarded. Multiple ATS boards with the same matched SIREN can share one company row.
+
+Both workflows use the same GitHub Actions concurrency group so weekly and daily jobs cannot write the SQLite database at the same time.
 
 ## Run locally
 
     python -m pip install -r requirements.txt
     python -m pytest -q
-    python -m crawler.source_discovery --out site/data/boards.json --force
-    python -m crawler.crawl --boards site/data/boards.json --out site/data
-    node --check site/app.js
+    python discover_companies.py --db data/jobs.db --report data/discovery_report.json
+    python sync_jobs.py --db data/jobs.db --output-dir data --report data/sync_report.json
 
-No API keys, paid job-data subscriptions or external database credentials are required for the discovery and feed-reading flow.
+For a quick discovery smoke test that skips the Common Crawl S3 refresh:
+
+    python discover_companies.py --seed-only --max-candidates 30
+
+There are no API keys, paid subscriptions or cloud database credentials in this pipeline.
 
 ## Coverage limits
 
-There is no central, complete list of all employers using each ATS. The URL index can miss new boards, custom-domain-only career pages, boards not yet archived, and sites that block crawlers. This is continuously expanded discovery, not a claim of perfect coverage. Common Crawl rate limits its index API; the crawler makes requests serially with delays and retains the previous board index if some provider-pattern searches fail.
+Common Crawl is a discoverability floor, not a census of all employers. It can miss new or unlinked boards, custom-domain career pages and providers without an anonymous public listing route. The public candidate snapshot is one starting source, and weekly Common Crawl range-index scans add more board tokens. Every candidate is checked live before it enters the France database.
