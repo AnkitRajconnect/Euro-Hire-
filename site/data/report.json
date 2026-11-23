@@ -1,9 +1,9 @@
 {
- "generated_at": "2026-11-23T14:12:24+00:00",
+ "generated_at": "2026-11-23T14:34:44+00:00",
  "feeds_ok": 7,
  "feeds_total": 7,
- "jobs_published": 301,
- "jobs_rejected": 778,
+ "jobs_published": 302,
+ "jobs_rejected": 777,
  "jobs_held_for_review": 60,
  "companies": [
   {
@@ -12,11 +12,11 @@
    "ats": "ashby",
    "ok": true,
    "raw": 123,
-   "kept": 59,
-   "rejected": 52,
+   "kept": 60,
+   "rejected": 51,
    "review": 12,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 52,
+    "outside Europe or occupation not in launch taxonomy": 51,
     "occupation is not in the approved professional-role taxonomy": 12
    },
    "error": null
