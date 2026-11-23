@@ -113,3 +113,14 @@
   .company-card-top { flex-direction: column; }
   .company-state-pills { max-width: 100%; justify-content: flex-start; }
 }
+
+/* France-wide registry search controls */
+.company-search-form { grid-template-columns: minmax(0, 1fr) auto; }
+.directory-filter-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 13px; }
+.directory-filter { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 10px; font-weight: 650; }
+.directory-filter select { width: 100%; min-width: 0; height: 37px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: #fff; font-size: 11px; }
+@media (max-width: 650px) {
+  .company-search-form { grid-template-columns: minmax(0, 1fr); }
+  .company-search-button { width: 100%; }
+  .directory-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

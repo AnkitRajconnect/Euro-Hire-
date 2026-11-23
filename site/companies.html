@@ -4,74 +4,103 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#244B3B">
-  <title>Company database — GullyHire</title>
-  <meta name="description" content="Search French legal-entity records available in the GLEIF Global LEI Index. No account or API key required.">
+  <title>French employer database — Euro-Hire</title>
+  <meta name="description" content="Search public French company and employer records across every French region using the official French company-search service.">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="companies.css">
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="index.html" aria-label="GullyHire home">
+    <a class="brand" href="index.html" aria-label="Euro-Hire home">
       <span class="brand-mark" aria-hidden="true"><span></span></span>
-      <span class="brand-name">GullyHire</span>
+      <span class="brand-name">Euro-Hire</span>
     </a>
     <nav class="primary-nav" aria-label="Main navigation">
       <a class="nav-link" href="index.html">Find jobs</a>
       <a class="nav-link active" href="companies.html" aria-current="page">Company database</a>
     </nav>
-    <div class="header-meta">Free public company data · No API key</div>
+    <div class="header-meta">France · official public registry search</div>
   </header>
 
   <main class="directory-shell">
     <section class="directory-hero" aria-labelledby="directory-title">
-      <div class="eyebrow">GULLYHIRE · COMPANY DISCOVERY</div>
-      <h1 id="directory-title">Find a <span>registered entity.</span></h1>
-      <p class="directory-lead">Search French records in the Global Legal Entity Identifier (LEI) Index. Get a legal name, LEI, registration status, legal form and registered address from a free public data source.</p>
+      <div class="eyebrow">EURO-HIRE · FRANCE EMPLOYER DISCOVERY</div>
+      <h1 id="directory-title">Search employers across <span>France.</span></h1>
+      <p class="directory-lead">Look up active French legal entities using the official Recherche d'entreprises service, backed by RNE and SIRENE public records. Search by company name, SIREN or SIRET, and narrow results by region and economic sector.</p>
       <div class="source-pills" aria-label="Data source features">
-        <span>France only</span><span>No account</span><span>No API key</span><span>Live search</span>
+        <span>France only</span><span>All regions</span><span>Official public data</span><span>Live search</span>
       </div>
     </section>
 
-    <section class="directory-search-panel" aria-label="Search company database">
+    <section class="directory-search-panel" aria-label="Search French employers">
       <form id="company-search" class="company-search-form">
         <label class="company-query-field" for="company-query">
-          <span class="field-label">Company name or 20-character LEI</span>
-          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" value="Orange" placeholder="Try Orange, BNP Paribas, Carrefour…" required>
+          <span class="field-label">Company name, SIREN or SIRET</span>
+          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" value="Orange" placeholder="Search any French company or employer…" required>
         </label>
-        <label class="company-filter-field" for="country-filter">
-          <span class="field-label">Country</span>
-          <select id="country-filter" name="country" aria-label="Country"><option value="FR" selected>France</option></select>
-        </label>
-        <button class="primary-button company-search-button" type="submit">Search companies <span aria-hidden="true">→</span></button>
+        <button class="primary-button company-search-button" type="submit">Search France <span aria-hidden="true">→</span></button>
       </form>
+      <div class="directory-filter-row">
+        <label class="directory-filter" for="region-filter"><span>Region</span>
+          <select id="region-filter">
+            <option value="">All France</option>
+            <option value="01">Guadeloupe</option><option value="02">Martinique</option><option value="03">Guyane</option>
+            <option value="04">La Réunion</option><option value="06">Mayotte</option><option value="11">Île-de-France</option>
+            <option value="24">Centre-Val de Loire</option><option value="27">Bourgogne-Franche-Comté</option>
+            <option value="28">Normandie</option><option value="32">Hauts-de-France</option><option value="44">Grand Est</option>
+            <option value="52">Pays de la Loire</option><option value="53">Bretagne</option><option value="75">Nouvelle-Aquitaine</option>
+            <option value="76">Occitanie</option><option value="84">Auvergne-Rhône-Alpes</option>
+            <option value="93">Provence-Alpes-Côte d'Azur</option><option value="94">Corse</option>
+          </select>
+        </label>
+        <label class="directory-filter" for="sector-filter"><span>Activity sector</span>
+          <select id="sector-filter">
+            <option value="">All sectors</option>
+            <option value="A">Agriculture and fishing</option><option value="B">Mining and extraction</option>
+            <option value="C">Manufacturing</option><option value="D">Energy</option><option value="E">Water and waste</option>
+            <option value="F">Construction</option><option value="G">Trade and retail</option><option value="H">Transport and storage</option>
+            <option value="I">Accommodation and food services</option><option value="J">Information and communication</option>
+            <option value="K">Finance and insurance</option><option value="L">Real estate</option>
+            <option value="M">Professional and technical services</option><option value="N">Administrative and support services</option>
+            <option value="O">Public administration</option><option value="P">Education</option>
+            <option value="Q">Health and social work</option><option value="R">Arts and recreation</option><option value="S">Other services</option>
+          </select>
+        </label>
+        <label class="directory-filter" for="employer-filter"><span>Employer evidence</span>
+          <select id="employer-filter">
+            <option value="all">All registry results</option><option value="employer">Confirmed employer</option>
+            <option value="non_employer">No employees recorded</option><option value="unknown">Not specified</option>
+          </select>
+        </label>
+        <label class="directory-filter" for="entity-status-filter"><span>Legal entity status</span>
+          <select id="entity-status-filter"><option value="A">Active entities</option><option value="">All statuses</option><option value="C">Closed entities</option></select>
+        </label>
+      </div>
       <div class="quick-searches">
         <span>Try:</span>
         <button type="button" data-query="Orange">Orange</button>
-        <button type="button" data-query="BNP Paribas">BNP Paribas</button>
         <button type="button" data-query="Carrefour">Carrefour</button>
-        <button type="button" data-query="BNP Paribas">BNP Paribas</button>
+        <button type="button" data-query="La Poste">La Poste</button>
+        <button type="button" data-query="Decathlon">Decathlon</button>
       </div>
     </section>
 
-    <section class="important-note" aria-label="Coverage and verification note">
+    <section class="important-note" aria-label="Registry and verification note">
       <span class="note-icon" aria-hidden="true">i</span>
-      <p><strong>What this database does — and does not — prove.</strong> GLEIF contains French legal entities that have an LEI; it is not a complete list of every small business or employer. An active entity status and an issued LEI are useful identity checks, but they do not prove that a company is hiring, that a website belongs to it, or that a job offer is genuine. GullyHire keeps every result as a <strong>candidate</strong> until its official domain and careers source are independently checked.</p>
+      <p><strong>Company identity is not the same as a verified hiring source.</strong> These results come from official public French registry data and cover searchable entities across France. The public search service excludes non-diffusible records and is not a complete download of SIRENE. An active legal entity or employer flag does not prove that its website is official or that it is hiring. Euro-Hire only crawls vacancies after the employer domain and career source have been verified.</p>
     </section>
 
-    <section class="directory-workspace" aria-label="Company search results and shortlist">
+    <section class="directory-workspace" aria-label="Registry search results and shortlist">
       <div class="directory-results-column">
         <div class="directory-section-heading">
-          <div><h2>Registry matches</h2><p id="result-summary" aria-live="polite">Enter a company name to search the public LEI database.</p></div>
-          <label class="compact-filter" for="entity-status-filter"><span>Entity status</span>
-            <select id="entity-status-filter"><option value="">All</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select>
-          </label>
+          <div><h2>French registry matches</h2><p id="result-summary" aria-live="polite">Search the national French company register.</p></div>
         </div>
         <div id="search-status" class="search-status" role="status" hidden></div>
         <div id="company-results" class="company-results">
           <div class="empty-directory-state">
-            <div class="empty-mark" aria-hidden="true">G</div>
-            <h3>Your company search starts here</h3>
-            <p>Try a company name above. Results come from GLEIF’s public LEI records, directly in your browser.</p>
+            <div class="empty-mark" aria-hidden="true">F</div>
+            <h3>Your France-wide company search starts here</h3>
+            <p>Search by a company name, SIREN or SIRET. You can filter results by region, sector and employer evidence.</p>
           </div>
         </div>
         <div class="pagination-row">
@@ -85,7 +114,7 @@
         <div class="shortlist-heading">
           <div><span class="eyebrow">YOUR WORKSPACE</span><h2 id="shortlist-title">Saved candidates <span id="shortlist-count">0</span></h2></div>
         </div>
-        <p class="shortlist-intro">Save interesting companies while you test. This list stays in this browser only; it is not uploaded to GitHub or shared with other visitors.</p>
+        <p class="shortlist-intro">Save legal entities while researching. This list stays in this browser only and does not mark a company as verified or approved.</p>
         <div id="shortlist-items" class="shortlist-items">
           <p class="shortlist-empty">No saved companies yet.</p>
         </div>
@@ -94,23 +123,23 @@
           <button id="clear-shortlist" class="text-action" type="button" disabled>Clear list</button>
         </div>
         <div class="pipeline-next-step">
-          <span class="step-number">NEXT</span>
-          <strong>Verify before approval</strong>
-          <p>Find the official company website, confirm it independently, then locate the careers page or ATS board. A registry result alone never publishes jobs.</p>
+          <span class="step-number">NEXT STEP</span>
+          <strong>Verify the employer source</strong>
+          <p>Confirm the company's own domain, find its careers page and approve the source before importing any vacancy.</p>
         </div>
       </aside>
     </section>
 
     <section class="source-credit">
-      <div><strong>Data provider: GLEIF Global LEI Index · France filter</strong><p>GLEIF publishes open legal-entity reference data under CC0. Search requests use the public GLEIF API; no GullyHire account, API key or backend is required.</p></div>
-      <a href="https://www.gleif.org/en/lei-data/access-and-use-lei-data" target="_blank" rel="noopener noreferrer">About GLEIF open data ↗</a>
+      <div><strong>Data provider: French government API Recherche d'entreprises</strong><p>Public RNE and SIRENE information. Search results are supplied directly by the official service; non-diffusible records are not exposed.</p></div>
+      <a href="https://recherche-entreprises.api.gouv.fr/docs/" target="_blank" rel="noopener noreferrer">API documentation ↗</a>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="footer-brand"><span class="footer-mark" aria-hidden="true"></span><strong>GullyHire</strong></div>
-    <p>Company records help identify legal entities. They do not certify an employer, recruiter, vacancy or application process. Always verify the employer through its official sources.</p>
-    <p class="footer-small"><a href="index.html">Back to job discovery</a> · <a href="https://api.gleif.org/api/v1" target="_blank" rel="noopener noreferrer">GLEIF public API</a></p>
+    <div class="footer-brand"><span class="footer-mark" aria-hidden="true"></span><strong>Euro-Hire</strong></div>
+    <p>Registry records support company discovery. They do not certify a company website, recruiter, vacancy or application process. Always apply through an employer's verified official source.</p>
+    <p class="footer-small"><a href="index.html">Back to job discovery</a> · <a href="https://annuaire-entreprises.data.gouv.fr/" target="_blank" rel="noopener noreferrer">Official Annuaire des Entreprises</a></p>
   </footer>
   <script src="companies.js" defer></script>
 </body>
