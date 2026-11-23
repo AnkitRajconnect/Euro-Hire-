@@ -104,6 +104,11 @@ CREATE TABLE IF NOT EXISTS france_website_verification_cursor (
   last_candidate_id INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS france_external_discovery_cursor (
+  source TEXT PRIMARY KEY,
+  next_offset INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
 """
 
 
@@ -724,11 +729,7 @@ def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
 def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
     """Round-robin verify website candidates; only exact legal-ID matches auto-verify."""
     limit = max(1, min(int(limit), 5000))
-    con.executescript(SCHEMA)
-    candidate_columns = {row["name"] for row in con.execute("PRAGMA table_info(france_website_candidates)")}
-    if "verified_legal_notice_url" not in candidate_columns:
-        con.execute("ALTER TABLE france_website_candidates ADD COLUMN verified_legal_notice_url TEXT")
-        con.commit()
+    ensure_discovery_schema(con)
     state = con.execute(
         "SELECT last_candidate_id FROM france_website_verification_cursor WHERE queue_name='FR_WEBSITES'"
     ).fetchone()
