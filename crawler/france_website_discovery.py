@@ -841,6 +841,16 @@ def ingest_french_tech_next40_120(con, http: Http) -> dict:
             skipped += 1
             continue
         website_url, domain = cleaned
+        # The cohort page also links to social networks and general services.
+        # Keep only plausible first-party company domains as discovery leads.
+        excluded_hosts = {
+            "lafrenchtech.gouv.fr", "linkedin.com", "facebook.com", "instagram.com",
+            "x.com", "twitter.com", "youtube.com", "youtu.be", "tiktok.com",
+            "crunchbase.com", "wellfound.com", "wikipedia.org",
+        }
+        if any(domain == host or domain.endswith("." + host) for host in excluded_hosts):
+            skipped += 1
+            continue
         keyset = name_keys(name)
         if not keyset:
             skipped += 1
