@@ -248,6 +248,13 @@ def discover_company_sources(con: sqlite3.Connection, country: str, registry_id:
         raise ValueError("Company not found")
     if row["registry_status"] != "active" or not row["legal_person"]:
         raise ValueError("Only active registered legal entities can be considered")
+    if country.upper() == "FR":
+        try:
+            employer_scope = (json.loads(row["raw_json"] or "{}")).get("employer_scope")
+        except (TypeError, ValueError):
+            employer_scope = None
+        if employer_scope != "employer":
+            raise ValueError("France discovery is restricted to SIRENE records with an employer employee band")
     if not _registry_is_fresh(row):
         raise ValueError("Refresh the official registry record before discovering or approving career sources")
     if not row["domain_verified"] or not row["official_domain"]:
@@ -1144,7 +1151,8 @@ def approved_companies(db: Path = DEFAULT_DB) -> list[dict]:
     con = connect(db)
     rows = con.execute("""SELECT c.*, s.ats, s.ats_slug, s.career_url, s.approval_method, s.last_checked, s.approved_at
       FROM companies c JOIN career_sources s ON s.company_id=c.id
-      WHERE c.registry_status='active' AND c.legal_person=1 AND c.domain_verified=1 AND s.approved=1""").fetchall()
+      WHERE c.registry_status='active' AND c.legal_person=1 AND c.domain_verified=1 AND s.approved=1
+      AND (c.country!='FR' OR json_extract(c.raw_json, '$.employer_scope')='employer')""").fetchall()
     out = []
     for row in rows:
         key = f"{row['country'].lower()}-{row['registry_id']}"
