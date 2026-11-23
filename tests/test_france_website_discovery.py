@@ -125,7 +125,7 @@ def test_exact_siren_match_verifies_and_persists_company_domain(tmp_path):
         "SELECT official_domain,domain_verified,domain_method FROM companies WHERE registry_id='123456789'"
     ).fetchone()
     candidate = con.execute(
-        "SELECT status,verification_note FROM france_website_candidates"
+        "SELECT status,verification_note,verified_registry_id FROM france_website_candidates"
     ).fetchone()
 
     assert report["checked"] == 1
@@ -134,6 +134,7 @@ def test_exact_siren_match_verifies_and_persists_company_domain(tmp_path):
         "candidate.fr", 1, "siren_in_legal_notice"
     )
     assert candidate["status"] == "verified_siren_match"
+    assert candidate["verified_registry_id"] == "123456789"
     assert "123456789" in candidate["verification_note"]
     con.close()
 
@@ -151,13 +152,14 @@ def test_mismatched_legal_identifier_never_verifies_candidate_domain(tmp_path):
         "SELECT official_domain,domain_verified FROM companies WHERE registry_id='123456789'"
     ).fetchone()
     candidate = con.execute(
-        "SELECT status FROM france_website_candidates"
+        "SELECT status,verified_registry_id FROM france_website_candidates"
     ).fetchone()
 
     assert report["verified_by_siren"] == 0
     assert company["official_domain"] is None
     assert company["domain_verified"] == 0
     assert candidate["status"] == "verified_registry_id_not_loaded"
+    assert candidate["verified_registry_id"] is None
     con.close()
 
 
@@ -177,12 +179,14 @@ def test_stale_legal_notice_proof_is_revoked_when_company_id_changes(tmp_path):
     })
 
     verify_pending_candidates(con, http, limit=10)
+    candidate = con.execute("SELECT verified_registry_id FROM france_website_candidates").fetchone()
     company = con.execute(
         "SELECT official_domain,domain_verified,domain_method FROM companies WHERE registry_id='123456789'"
     ).fetchone()
     assert company["official_domain"] == "candidate.fr"
     assert company["domain_verified"] == 0
     assert company["domain_method"] is None
+    assert candidate["verified_registry_id"] is None
     con.close()
 
 def test_public_export_contains_only_verified_same_company_websites(tmp_path):
@@ -200,6 +204,7 @@ def test_public_export_contains_only_verified_same_company_websites(tmp_path):
     assert count == 1
     assert payload["count"] == 1
     assert payload["companies"][0]["siren"] == "123456789"
+    assert payload["companies"][0]["verified_registry_id"] == "123456789"
     assert payload["companies"][0]["official_website"] == "https://candidate.fr/"
     assert payload["companies"][0]["verification_method"].startswith("Matching SIREN/SIRET")
     assert payload["companies"][0]["evidence"]["legal_notice_url"] == "https://candidate.fr/mentions-legales"
@@ -405,7 +410,7 @@ def test_unmatched_place_name_can_be_verified_by_unique_siren_in_legal_notice(tm
         "SELECT official_domain,domain_verified FROM companies WHERE registry_id='123456789'"
     ).fetchone()
     candidate = con.execute(
-        "SELECT status,candidate_registry_ids_json,matched_company_count,observed_names_json "
+        "SELECT status,candidate_registry_ids_json,matched_company_count,observed_names_json,verified_registry_id "
         "FROM france_website_candidates"
     ).fetchone()
 
@@ -413,6 +418,7 @@ def test_unmatched_place_name_can_be_verified_by_unique_siren_in_legal_notice(tm
     assert company["official_domain"] == "candidate.fr"
     assert company["domain_verified"] == 1
     assert candidate["status"] == "verified_siren_match"
+    assert candidate["verified_registry_id"] == "123456789"
     assert json.loads(candidate["candidate_registry_ids_json"]) == ["123456789"]
     assert candidate["matched_company_count"] == 1
     assert json.loads(candidate["observed_names_json"])[0]["value"] == "Maison du Sport"
@@ -490,4 +496,65 @@ def test_one_domain_check_is_reused_for_duplicate_place_records(tmp_path):
         "verified_siren_match",
         "verified_siren_match",
     ]
+    con.close()
+
+
+def test_new_company_match_cannot_inherit_another_companys_domain_proof(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = add_company_and_candidate(db, siren="123456789", domain="brand-site.fr")
+    upsert_candidate(
+        con,
+        country="FR",
+        registry_id="987654321",
+        legal_name="AUTRE GROUPE SAS",
+        legal_form="5710",
+        registry_status="active",
+        registry_source="INSEE SIRENE",
+        legal_person=True,
+        raw={"employer_scope": "employer", "employee_range": "11"},
+    )
+    http = FakeHttp({
+        "https://brand-site.fr/": '<a href="/mentions-legales">Mentions légales</a>',
+        "https://brand-site.fr/mentions-legales": "<p>SIREN : 123 456 789</p>",
+    })
+
+    first = verify_pending_candidates(con, http, limit=10)
+    assert first["verified_by_siren"] == 1
+    proof = con.execute(
+        "SELECT verified_registry_id,status FROM france_website_candidates"
+    ).fetchone()
+    assert proof["verified_registry_id"] == "123456789"
+    assert proof["status"] == "verified_siren_match"
+
+    _upsert_candidate(
+        con,
+        place_id="overture-place-second-identity",
+        place_name="EXEMPLE INDUSTRIE",
+        website_url="https://brand-site.fr/",
+        domain="brand-site.fr",
+        normalized_name="exemple industrie",
+        registry_ids=["987654321"],
+        match_method="exact_trading_name",
+        address=None,
+        locality=None,
+        postcode=None,
+        region=None,
+        confidence=0.95,
+        release="2026-11-18.0",
+        observed_names=[{"value": "EXEMPLE INDUSTRIE", "language": "fr"}],
+    )
+    reset = con.execute(
+        "SELECT status,verified_registry_id,verification_note FROM france_website_candidates"
+    ).fetchone()
+    assert reset["status"] == "pending_verification"
+    assert reset["verified_registry_id"] is None
+    assert reset["verification_note"] is None
+
+    verify_pending_candidates(con, http, limit=10)
+    output = tmp_path / "france-company-websites.json"
+    count = export_verified_websites(con, output)
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert count == 1
+    assert [row["siren"] for row in payload["companies"]] == ["123456789"]
+    assert payload["companies"][0]["verified_registry_id"] == "123456789"
     con.close()
