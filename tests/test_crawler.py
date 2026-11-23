@@ -69,17 +69,19 @@ def test_language_detection():
     assert detect_language("short") == "en"
 
 
-def test_europe_filter_and_remote_rules():
+def test_france_only_filter_and_remote_rules():
     base = {"id": "1", "title": "Backend Engineer", "url": "https://x.test/1", "description": ""}
-    assert normalize({**base, "location": "Berlin"}, co(), NOW)["country"] == "DE"
-    assert normalize({**base, "location": "New York, NY"}, co(), NOW) is None
-    assert normalize({**base, "location": "Remote - US"}, co(), NOW) is None
-    # bare "Remote": kept for a European HQ, dropped for a US-HQ company
-    assert normalize({**base, "location": "Remote"}, co(hq="DE"), NOW)["remote"] is True
+    assert normalize({**base, "location": "Paris, France"}, co(hq="DE"), NOW)["country"] == "FR"
+    assert normalize({**base, "location": "Berlin"}, co(hq="FR"), NOW) is None
+    assert normalize({**base, "location": "New York, NY"}, co(hq="FR"), NOW) is None
+    assert normalize({**base, "location": "Remote - US"}, co(hq="FR"), NOW) is None
+    # A French employer may publish a generic remote role; a foreign employer may not.
+    assert normalize({**base, "location": "Remote"}, co(hq="FR"), NOW)["country"] == "FR"
     assert normalize({**base, "location": "Remote"}, co(hq="US"), NOW) is None
-    # explicit Europe signal wins regardless of HQ
-    assert normalize({**base, "location": "Remote, EMEA"}, co(hq="US"), NOW) is not None
-    assert normalize({**base, "location": "Remote - Germany"}, co(hq="US"), NOW)["country"] == "DE"
+    # EMEA is not a France location and must not bypass the France-only rule.
+    assert normalize({**base, "location": "Remote, EMEA"}, co(hq="US"), NOW) is None
+    assert normalize({**base, "location": "Remote - Germany"}, co(hq="US"), NOW) is None
+    assert normalize({**base, "location": "Remote - France"}, co(hq="US"), NOW)["country"] == "FR"
 
 
 def test_classification():
