@@ -154,10 +154,10 @@ def test_mismatched_legal_identifier_never_verifies_candidate_domain(tmp_path):
         "SELECT status FROM france_website_candidates"
     ).fetchone()
 
-    assert report["identifier_mismatches"] == 1
+    assert report["verified_by_siren"] == 0
     assert company["official_domain"] is None
     assert company["domain_verified"] == 0
-    assert candidate["status"] == "legal_identifier_mismatch"
+    assert candidate["status"] == "verified_registry_id_not_loaded"
     con.close()
 
 
@@ -349,4 +349,104 @@ def test_wikidata_siren_link_adds_candidate_but_does_not_approve_domain(tmp_path
     assert company["domain_verified"] == 0
     assert len(http.calls) == 1
     assert "wdt:P1616" in http.calls[0][1]["params"]["query"]
+    con.close()
+
+
+def test_unmatched_place_name_can_be_verified_by_unique_siren_in_legal_notice(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = connect(db)
+    upsert_candidate(
+        con,
+        country="FR",
+        registry_id="123456789",
+        legal_name="EXEMPLE INDUSTRIE SAS",
+        legal_form="5710",
+        registry_status="active",
+        registry_source="INSEE SIRENE",
+        legal_person=True,
+        raw={"employer_scope": "employer", "employee_range": "11"},
+    )
+    from crawler.france_website_discovery import ensure_discovery_schema
+    ensure_discovery_schema(con)
+    _upsert_candidate(
+        con,
+        place_id="overture-place-unmatched",
+        place_name="Maison du Sport",
+        website_url="https://candidate.fr/",
+        domain="candidate.fr",
+        normalized_name="maison du sport",
+        registry_ids=[],
+        match_method="unmatched_place_name",
+        address="1 Rue Exemple",
+        locality="Paris",
+        postcode="75001",
+        region="Île-de-France",
+        confidence=0.95,
+        release="2026-11-18.0",
+        observed_names=[{
+            "value": "Maison du Sport",
+            "language": "fr",
+            "variant": "primary",
+            "source_field": "place.names.primary",
+        }],
+        source_evidence=[{
+            "provider": "Overture",
+            "record_id": "overture-place-unmatched",
+            "license": "CDLA-Permissive-2.0",
+        }],
+    )
+    http = FakeHttp({
+        "https://candidate.fr/": '<a href="/mentions-legales">Mentions légales</a>',
+        "https://candidate.fr/mentions-legales": "<p>SIREN : 123 456 789</p>",
+    })
+
+    report = verify_pending_candidates(con, http, limit=10)
+    company = con.execute(
+        "SELECT official_domain,domain_verified FROM companies WHERE registry_id='123456789'"
+    ).fetchone()
+    candidate = con.execute(
+        "SELECT status,candidate_registry_ids_json,matched_company_count,observed_names_json "
+        "FROM france_website_candidates"
+    ).fetchone()
+
+    assert report["verified_by_siren"] == 1
+    assert company["official_domain"] == "candidate.fr"
+    assert company["domain_verified"] == 1
+    assert candidate["status"] == "verified_siren_match"
+    assert json.loads(candidate["candidate_registry_ids_json"]) == ["123456789"]
+    assert candidate["matched_company_count"] == 1
+    assert json.loads(candidate["observed_names_json"])[0]["value"] == "Maison du Sport"
+    con.close()
+
+
+def test_upsert_keeps_unmatched_observed_names_when_registry_match_arrives(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = connect(db)
+    from crawler.france_website_discovery import ensure_discovery_schema
+    ensure_discovery_schema(con)
+    observed = [{"value": "Maison du Sport", "language": "fr", "variant": "primary"}]
+    _upsert_candidate(
+        con, place_id="overture-1", place_name="Maison du Sport",
+        website_url="https://candidate.fr/", domain="candidate.fr",
+        normalized_name="maison du sport", registry_ids=[],
+        match_method="unmatched_place_name", address=None, locality=None,
+        postcode=None, region=None, confidence=0.9, release="2026-11-18.0",
+        observed_names=observed,
+    )
+    _upsert_candidate(
+        con, place_id="overture-2", place_name="Maison du Sport",
+        website_url="https://candidate.fr/", domain="candidate.fr",
+        normalized_name="maison du sport", registry_ids=["123456789"],
+        match_method="exact_establishment_alias", address=None, locality=None,
+        postcode=None, region=None, confidence=0.95, release="2026-11-18.0",
+        matched_names=[{"value": "Maison du Sport", "registry_id": "123456789"}],
+        observed_names=observed,
+    )
+    row = con.execute(
+        "SELECT candidate_registry_ids_json,observed_names_json,matched_names_json,match_score "
+        "FROM france_website_candidates"
+    ).fetchone()
+    assert json.loads(row["candidate_registry_ids_json"]) == ["123456789"]
+    assert json.loads(row["observed_names_json"])[0]["value"] == "Maison du Sport"
+    assert json.loads(row["matched_names_json"])[0]["registry_id"] == "123456789"
     con.close()
