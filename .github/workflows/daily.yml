@@ -52,6 +52,15 @@ jobs:
           path: data/company_registry.sqlite3
           key: france-sirene-${{ github.run_id }}
 
+      - name: Discover French legal entities from the official company-search API
+        run: >-
+          python -m crawler.france_discovery
+          --db data/company_registry.sqlite3
+          --limit 500
+          --pages-per-query 1
+          --max-queries 24
+          --output /tmp/france-discovery-report.json
+
       - name: Build the French employer website-verification queue
         run: >-
           python -m crawler.france_domain_queue
@@ -96,6 +105,15 @@ jobs:
         with:
           name: gullyhire-review-queue
           path: /tmp/gullyhire-review-queue.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Keep official French company-discovery report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: france-company-discovery-report
+          path: /tmp/france-discovery-report.json
           if-no-files-found: ignore
           retention-days: 7
 
