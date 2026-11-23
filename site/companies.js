@@ -347,5 +347,6 @@
   wireEvents();
   renderShortlist();
   updatePagination();
-  searchCompanies(1);
+  // No hard-coded sample company is searched on load. The first result set
+  // must come from the visitor's own query or a sector shortcut.
 })();

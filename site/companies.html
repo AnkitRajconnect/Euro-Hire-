@@ -36,7 +36,7 @@
       <form id="company-search" class="company-search-form">
         <label class="company-query-field" for="company-query">
           <span class="field-label">Company name, SIREN or SIRET</span>
-          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" value="Orange" placeholder="Search any French company or employer…" required>
+          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" placeholder="Search any French company or employer…" required>
         </label>
         <button class="primary-button company-search-button" type="submit">Search France <span aria-hidden="true">→</span></button>
       </form>
@@ -78,10 +78,10 @@
       </div>
       <div class="quick-searches">
         <span>Try:</span>
-        <button type="button" data-query="Orange">Orange</button>
-        <button type="button" data-query="Carrefour">Carrefour</button>
-        <button type="button" data-query="La Poste">La Poste</button>
-        <button type="button" data-query="Decathlon">Decathlon</button>
+        <button type="button" data-query="commerce">Commerce</button>
+        <button type="button" data-query="industrie">Industrie</button>
+        <button type="button" data-query="transport">Transport</button>
+        <button type="button" data-query="restauration">Restauration</button>
       </div>
     </section>
 
@@ -93,7 +93,7 @@
     <section class="directory-workspace" aria-label="Registry search results and shortlist">
       <div class="directory-results-column">
         <div class="directory-section-heading">
-          <div><h2>French registry matches</h2><p id="result-summary" aria-live="polite">Search the national French company register.</p></div>
+          <div><h2>French registry matches</h2><p id="result-summary" aria-live="polite">Search all French regions by company name, SIREN, SIRET or sector keyword.</p></div>
         </div>
         <div id="search-status" class="search-status" role="status" hidden></div>
         <div id="company-results" class="company-results">
