@@ -130,6 +130,25 @@
       </aside>
     </section>
 
+    <section class="verified-websites-section" aria-labelledby="verified-websites-title">
+      <div class="directory-section-heading">
+        <div>
+          <span class="eyebrow">EVIDENCE-BACKED DIRECTORY</span>
+          <h2 id="verified-websites-title">Verified company websites</h2>
+          <p>Only domains whose first-party French legal notice contains the matching company SIREN or SIRET are listed here.</p>
+        </div>
+      </div>
+      <div class="verified-websites-toolbar">
+        <label for="verified-website-query">Search verified websites</label>
+        <input id="verified-website-query" type="search" autocomplete="off" placeholder="Company, city, region, SIREN or domain">
+        <a href="data/france-company-websites.json" target="_blank" rel="noopener noreferrer">Open verified dataset ↗</a>
+      </div>
+      <p id="verified-websites-status" class="search-status" role="status">Loading verified company websites…</p>
+      <div id="verified-websites-results" class="verified-websites-results">
+        <div class="empty-directory-state"><h3>Loading verified websites</h3><p>The directory only displays websites that passed the legal-identity check.</p></div>
+      </div>
+    </section>
+
     <section class="source-credit">
       <div><strong>Data provider: French government API Recherche d'entreprises</strong><p>Public RNE and SIRENE information. Search results are supplied directly by the official service; non-diffusible records are not exposed. Use region and activity filters to broaden and segment coverage.</p></div>
       <a href="https://recherche-entreprises.api.gouv.fr/docs/" target="_blank" rel="noopener noreferrer">API documentation ↗</a>
