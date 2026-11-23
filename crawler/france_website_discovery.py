@@ -168,7 +168,8 @@ def _company_name_index(con) -> dict[str, dict[str, str]]:
     rows = con.execute(
         """SELECT id,registry_id,legal_name,trading_name,raw_json
            FROM companies
-           WHERE country='FR' AND registry_status='active' AND legal_person=1"""
+           WHERE country='FR' AND registry_status='active' AND legal_person=1
+             AND json_extract(raw_json, '$.employer_scope')='employer'"""
     ).fetchall()
     for row in rows:
         names = [(row["legal_name"], "exact_legal_name"),
