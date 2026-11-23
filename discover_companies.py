@@ -76,12 +76,13 @@ async def sync_wttj(http, conn, run_started):
 
 async def enrich_pending(http, conn, limit: int):
     rows = conn.execute("""
-      SELECT company_key FROM companies
-      WHERE insee_match_status IN ('pending','error')
-         OR (insee_match_status='unmatched'
-             AND (insee_checked_at IS NULL OR insee_checked_at < datetime('now','-30 days')))
-      ORDER BY CASE insee_match_status WHEN 'pending' THEN 0 WHEN 'error' THEN 1 ELSE 2 END,
-               first_seen_at
+      SELECT DISTINCT c.company_key
+      FROM companies c JOIN jobs j ON j.company_key=c.company_key
+      WHERE j.is_active=1 AND j.country_code='FR'
+        AND (c.insee_match_status IN ('pending','error')
+         OR (c.insee_match_status='unmatched'
+             AND (c.insee_checked_at IS NULL OR c.insee_checked_at < datetime('now','-30 days'))))
+      ORDER BY c.company_key
       LIMIT ?
     """, (limit,)).fetchall()
     semaphore = asyncio.Semaphore(6)
