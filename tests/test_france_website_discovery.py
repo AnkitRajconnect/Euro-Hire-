@@ -14,6 +14,7 @@ from crawler.france_website_discovery import (
     extract_overture_source_evidence,
     export_verified_websites,
     ingest_wikidata_siren_websites,
+    ingest_french_tech_next40_120,
     name_keys,
     verify_pending_candidates,
 )
@@ -43,6 +44,12 @@ class FakeHttp:
         if isinstance(value, Exception):
             raise value
         return FakeResponse(url, value)
+
+    def get_text(self, url, **kwargs):
+        response = self.get(url, **kwargs)
+        if response.status_code >= 400:
+            raise RuntimeError(f"HTTP {response.status_code}: {url}")
+        return response.text
 
 
 class FakeJsonHttp:
@@ -557,4 +564,56 @@ def test_new_company_match_cannot_inherit_another_companys_domain_proof(tmp_path
     assert count == 1
     assert [row["siren"] for row in payload["companies"]] == ["123456789"]
     assert payload["companies"][0]["verified_registry_id"] == "123456789"
+    con.close()
+
+
+
+def test_french_tech_cohort_creates_unverified_candidates_then_verifies_company_identity(tmp_path):
+    from crawler.france_website_discovery import FRENCH_TECH_NEXT40_120_URL
+
+    db = tmp_path / "france.sqlite3"
+    con = connect(db)
+    upsert_candidate(
+        con,
+        country="FR",
+        registry_id="123456789",
+        legal_name="EXEMPLE STARTUP SAS",
+        legal_form="5710",
+        registry_status="active",
+        registry_source="INSEE SIRENE",
+        legal_person=True,
+        raw={"employer_scope": "employer", "employee_range": "11"},
+    )
+    cohort_page = (
+        '<html><a href="https://startup.example/">Exemple Startup</a>'
+        '<a href="https://www.linkedin.com/company/exemple-startup">LinkedIn</a></html>'
+    )
+    http = FakeHttp({
+        FRENCH_TECH_NEXT40_120_URL: cohort_page,
+        "https://startup.example/": '<a href="/mentions-legales">Mentions légales</a>',
+        "https://startup.example/mentions-legales": "<p>SIREN : 123 456 789</p>",
+    })
+
+    report = ingest_french_tech_next40_120(con, http)
+    candidate = con.execute(
+        "SELECT status,match_method,source_evidence_json FROM france_website_candidates"
+    ).fetchone()
+    assert report["companies_discovered"] == 1
+    assert candidate["status"] == "pending_verification"
+    assert candidate["match_method"] == "french_tech_official_cohort"
+    evidence = json.loads(candidate["source_evidence_json"])
+    assert evidence[0]["provider"] == "Mission French Tech"
+    assert evidence[0]["source_url"] == FRENCH_TECH_NEXT40_120_URL
+    assert "licence_status" in evidence[0]
+
+    verification = verify_pending_candidates(con, http, limit=10)
+    company = con.execute(
+        "SELECT official_domain,domain_verified,raw_json FROM companies WHERE registry_id='123456789'"
+    ).fetchone()
+    raw = json.loads(company["raw_json"])
+    assert verification["verified_by_siren"] == 1
+    assert company["official_domain"] == "startup.example"
+    assert company["domain_verified"] == 1
+    assert raw["startup_cohort_verified"] is True
+    assert raw["startup_discovery_sources"][0]["legal_notice_url"] == "https://startup.example/mentions-legales"
     con.close()
