@@ -1,10 +1,10 @@
-name: GullyHire live crawler and website
+name: Euro-Hire daily job feed and website
 
 on:
   push:
     branches: [main]
   schedule:
-    - cron: '15 5 * * *' # Daily at 05:15 UTC
+    - cron: '15 5 * * *'
   workflow_dispatch: {}
 
 permissions:
@@ -13,18 +13,16 @@ permissions:
   id-token: write
 
 concurrency:
-  group: eurohire-france-registry-jobs-v2
+  group: eurohire-live-jobs
   cancel-in-progress: false
 
 jobs:
   crawl-and-package:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -35,75 +33,26 @@ jobs:
       - name: Install crawler dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
-      - name: Restore the France company registry cache
-        uses: actions/cache/restore@v4
-        with:
-          path: data/company_registry.sqlite3
-          key: france-sirene-${{ github.run_id }}
-          restore-keys: |
-            france-sirene-
-
-      - name: Sync the official French SIRENE company register
-        run: python -m crawler.france_registry_sync --db data/company_registry.sqlite3
-
-      - name: Use full France SIRENE stock for employer website matching
-        run: |
-          echo "Using the full synchronized French legal-entity stock."
-          echo "The public search API is not used as a bulk crawler because it rate-limits high-volume queries."
-          python -m crawler.company_registry --db data/company_registry.sqlite3 coverage-fr
-
-      - name: Run the automated test suite
+      - name: Run tests and validate the site JavaScript
         run: |
           python -m pytest -q
-          node --check site/companies.js
+          node --check site/app.js
 
-      - name: Discover and verify French company websites from open business-place data
-        env:
-          EUROHIRE_CONTACT: https://github.com/${{ github.repository }}
-        run: >-
-          python -m crawler.france_website_discovery
-          --db data/company_registry.sqlite3
-          --verify-limit 5000
-          --report site/data/france-website-discovery-report.json
-          --websites-output site/data/france-company-websites.json
-
-      - name: Build the French employer website-verification queue
-        run: >-
-          python -m crawler.france_domain_queue
-          --db data/company_registry.sqlite3
-          --limit 1000
-          --output /tmp/france-domain-review-queue.json
-
-      - name: Discover career pages on verified French employer domains
-        run: |
-          python -m crawler.company_registry --db data/company_registry.sqlite3 discover-all --country FR --limit 5000
-          python -m crawler.company_registry --db data/company_registry.sqlite3 coverage-fr
-
-      - name: Persist the France employer and website discovery database
-        uses: actions/cache/save@v4
-        with:
-          path: data/company_registry.sqlite3
-          key: france-sirene-${{ github.run_id }}
-
-      - name: Crawl all approved French employer career sources (no fixed company list)
-        env:
-          GULLYHIRE_CONTACT: https://github.com/${{ github.repository }}
+      - name: Read public employer career boards
         run: >-
           python -m crawler.crawl
-          --curated-config
           --companies companies.yaml
-          --country FR
-          --review-out /tmp/gullyhire-review-queue.json
+          --review-out /tmp/eurohire-review-queue.json
           --out site/data
           --workers 6
 
-      - name: Save the latest real job data in the repository
+      - name: Save live job data
         run: |
-          git config user.name 'gullyhire-bot'
-          git config user.email 'gullyhire-bot@users.noreply.github.com'
-          git add site/data/jobs.json site/data/report.json site/data/france-website-discovery-report.json site/data/france-company-websites.json
+          git config user.name 'eurohire-bot'
+          git config user.email 'eurohire-bot@users.noreply.github.com'
+          git add site/data/jobs.json site/data/report.json
           if ! git diff --cached --quiet; then
-            git commit -m "Refresh live employer jobs $(date -u +%F)"
+            git commit -m "Refresh Europe job feed $(date -u +%F)"
             git push
           else
             echo 'Live job data did not change.'
@@ -113,24 +62,15 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: gullyhire-review-queue
-          path: /tmp/gullyhire-review-queue.json
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Keep French employer website-verification queue
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: france-domain-review-queue
-          path: /tmp/france-domain-review-queue.json
+          name: eurohire-review-queue
+          path: /tmp/eurohire-review-queue.json
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
 
-      - name: Package the live website
+      - name: Package website
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
@@ -147,6 +87,6 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - name: Publish GullyHire
+      - name: Publish Euro-Hire
         id: deployment
         uses: actions/deploy-pages@v5

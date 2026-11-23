@@ -1,14 +1,65 @@
-# Reviewed compatibility seed for the France-first crawler.
-# This file is NOT the employer limit. Every additional French source that has
-# passed registry, official-domain and career-source approval is loaded from
-# the company registry automatically. Never add guessed or unverified sources.
-
+# Reviewed public employer career boards.
+# Add an employer only after confirming its board from its own careers page.
 companies:
+  - name: Spotify
+    slug: spotify
+    ats: lever
+    hq: SE
+    official_domain: lifeatspotify.com
+    official_careers_url: https://www.lifeatspotify.com/jobs
+    career_url: https://jobs.lever.co/spotify
+    source_reviewed_on: '2026-11-23'
+
+  - name: ElevenLabs
+    slug: elevenlabs
+    ats: ashby
+    hq: GB
+    official_domain: elevenlabs.io
+    official_careers_url: https://elevenlabs.io/careers
+    career_url: https://jobs.ashbyhq.com/elevenlabs
+    source_reviewed_on: '2026-11-23'
+
+  - name: Synthesia
+    slug: synthesia
+    ats: ashby
+    hq: GB
+    official_domain: synthesia.io
+    official_careers_url: https://www.synthesia.io/careers
+    career_url: https://jobs.ashbyhq.com/synthesia
+    source_reviewed_on: '2026-11-23'
+
+  - name: Supabase
+    slug: supabase
+    ats: ashby
+    hq: US
+    official_domain: supabase.com
+    official_careers_url: https://supabase.com/careers
+    career_url: https://jobs.ashbyhq.com/supabase
+    source_reviewed_on: '2026-11-23'
+
+  - name: Linear
+    slug: linear
+    ats: ashby
+    hq: US
+    official_domain: linear.app
+    official_careers_url: https://linear.app/careers
+    career_url: https://jobs.ashbyhq.com/linear
+    source_reviewed_on: '2026-11-23'
+
   - name: Hugging Face
     slug: huggingface
     ats: workable
-    hq: FR
+    hq: US
     official_domain: huggingface.co
     official_careers_url: https://huggingface.co/careers
     career_url: https://apply.workable.com/huggingface
+    source_reviewed_on: '2026-11-23'
+
+  - name: Stripe
+    slug: stripe
+    ats: greenhouse
+    hq: US
+    official_domain: stripe.com
+    official_careers_url: https://stripe.com/jobs
+    career_url: https://job-boards.greenhouse.io/stripe
     source_reviewed_on: '2026-11-23'

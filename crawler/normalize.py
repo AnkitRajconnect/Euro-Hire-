@@ -1,4 +1,4 @@
-"""Turn adapter output into one consistent job record, and decide if it is in Europe."""
+"""Normalize public ATS postings and keep Europe-eligible roles only."""
 from __future__ import annotations
 
 import re
@@ -15,6 +15,12 @@ NON_EUROPE_RE = re.compile(
     r"north america|latam|apac|new york|san francisco|toronto|bangalore|bengaluru|sydney)\b", re.I)
 
 US_RE = re.compile(r"\bUS\b|\bU\.S\.")  # case-sensitive on purpose ("join us")
+OUTSIDE_EUROPE_RE = re.compile(
+    r"\b(emea|apac|latam|north america|south america|africa|middle east|asia|"
+    r"worldwide|global|united states|usa|canada|india|brazil|mexico|australia|"
+    r"singapore|japan|china|south korea|new york|san francisco|toronto|"
+    r"bangalore|bengaluru|sydney)\b", re.I
+)
 
 ROLE_RULES = [
     ("data", r"data (scientist|engineer|analyst)|machine learning|\bml\b|\bai\b|research scientist|analytics|\bbi\b|"
@@ -135,85 +141,79 @@ def classify(title: str, department: str | None):
 
 
 def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
-    """Return a final job dict only for opportunities located in France."""
+    """Return only European-location jobs; map-wide remote jobs to Europe."""
     title = (raw.get("title") or "").strip()
     url = (raw.get("url") or "").strip()
-    if not title or not url.startswith("http"):
+    if not title or not url.startswith("https://"):
         return None
 
-    loc_text = (raw.get("location") or "").strip()
-    desc = raw.get("description") or ""
+    location_text = (raw.get("location") or "").strip()
+    description = raw.get("description") or ""
     hint = (raw.get("country") or "").upper() or None
     if not hint and raw.get("country_text"):
-        for rx, cc in geo._COUNTRY_INDEX:
-            if rx.search(geo._norm(raw["country_text"])) or raw["country_text"].upper() == cc:
-                hint = cc
+        for pattern, country_code in geo._COUNTRY_INDEX:
+            if pattern.search(geo._norm(str(raw["country_text"]))) or str(raw["country_text"]).upper() == country_code:
+                hint = country_code
                 break
+    if hint and hint not in geo.EUROPE:
+        return None
 
-    blob = f"{loc_text} {title}"
-    remote = bool(raw.get("remote")) or bool(REMOTE_RE.search(blob))
-    place = geo.locate(loc_text, hint)
-    locations = geo.locate_all(loc_text, hint)
+    search_text = f"{location_text} {title}"
+    remote = bool(raw.get("remote")) or bool(REMOTE_RE.search(search_text))
+    place = geo.locate(location_text, hint)
+    locations = geo.locate_all(location_text, hint)
     if place is None and hint is None:
-        # Some boards put the city only in the title ("Engineer (Berlin)")
         place = geo.locate(title)
         locations = geo.locate_all(title)
 
-    # France-only launch policy: every explicitly listed location must be in France.
-    if place is not None and place["country"] != "FR":
+    if place is not None and place["country"] not in geo.EUROPE:
         return None
-    if any(item.get("country") != "FR" for item in locations):
+    if any(item.get("country") not in geo.EUROPE for item in locations):
         return None
-    # A remote label does not override an explicit non-France location restriction.
-    location_blob = f"{loc_text} {raw.get('country_text') or ''}"
-    explicit_non_france = bool(US_RE.search(location_blob) or NON_EUROPE_RE.search(location_blob))
-    for country_rx, country_code in geo._COUNTRY_INDEX:
-        if country_code != "FR" and country_rx.search(geo._norm(location_blob)):
-            explicit_non_france = True
-            break
-    if explicit_non_france:
+
+    location_blob = f"{location_text} {raw.get('country_text') or ''}"
+    if US_RE.search(location_blob) or OUTSIDE_EUROPE_RE.search(location_blob):
         return None
+    for country_pattern, country_code in geo._COUNTRY_INDEX:
+        if country_code not in geo.EUROPE and country_pattern.search(geo._norm(location_blob)):
+            return None
+
     if place is None:
-        if not remote:
+        # A generic remote job is included only where the employer is based in
+        # Europe. Remote-Europe roles from elsewhere are already mapped to EU.
+        if not remote or str(company.get("hq") or "").upper() not in geo.EUROPE:
             return None
-        verification = company.get("verification") or {}
-        registry_country = ((verification.get("registry") or {}).get("country") or "").upper()
-        france_signal = hint == "FR" or registry_country == "FR" or company.get("hq") == "FR" or bool(
-            re.search(r"\bfrance\b", location_blob, re.I)
-        )
-        # Generic remote postings are only eligible when the employer itself is
-        # registered in France; "Europe", "EMEA" and worldwide remote are not enough.
-        if not france_signal:
-            return None
+        _, latitude, longitude, _ = geo.COUNTRIES["EU"]
+        place = {"city": None, "country": "EU", "lat": latitude, "lon": longitude}
+        locations = [place]
 
     role, level = classify(title, raw.get("department"))
-    # Keep legitimate professional roles even when the title is not covered by
-    # the current taxonomy. The UI already supports an "Other" filter; rejecting
-    # these jobs silently makes the board look much smaller than its sources.
-    # Manual/service occupations are screened before normalisation.
-    salary = find_salary(desc[:6000] + " " + loc_text)
-    language = detect_language(desc[:1500] or title)
+    salary = find_salary(description[:6000] + " " + location_text)
+    language = detect_language(description[:1500] or title)
+    company_key = company.get("company_key") or company["slug"]
+    if place["city"]:
+        display_city = place["city"]
+    elif place["country"] == "EU":
+        display_city = "Remote Europe"
+    elif remote:
+        display_city = f"Remote · {geo.COUNTRIES[place['country']][0]}"
+    else:
+        display_city = geo.COUNTRIES[place["country"]][0]
 
-    cc = company.get("company_key") or company["slug"]
-    verification = company.get("verification") or {}
     return {
-        "id": f"{company['ats']}:{cc}:{raw['id']}",
+        "id": f"{company['ats']}:{company_key}:{raw['id']}",
         "company": company["name"],
-        "company_slug": company.get("slug") or cc,
-        "company_registry_id": (verification.get("registry") or {}).get("id"),
-        "company_registry_country": (verification.get("registry") or {}).get("country"),
-        "company_registry_verified": bool((verification.get("registry") or {}).get("verified")),
-        "company_registry_checked_at": (verification.get("registry") or {}).get("checked_at"),
-        "career_source_verified": bool((verification.get("source") or {}).get("verified")),
+        "company_slug": company.get("slug") or company_key,
+        "career_source_verified": True,
         "source_last_checked": now_iso,
         "title": title,
         "url": url,
-        "location": loc_text or ("Remote" if remote else ""),
-        "city": place["city"] if place else None,
-        "country": place["country"] if place else ("FR" if remote else None),
-        "locations": locations,
-        "lat": place["lat"] if place else None,
-        "lon": place["lon"] if place else None,
+        "location": location_text or ("Remote Europe" if place["country"] == "EU" else "Remote"),
+        "city": display_city,
+        "country": place["country"],
+        "locations": locations or [place],
+        "lat": place["lat"],
+        "lon": place["lon"],
         "remote": remote,
         "role": role,
         "level": level,
@@ -221,7 +221,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         "salary": salary,
         "department": raw.get("department"),
         "posted": raw.get("posted"),
-        "snippet": desc[:SNIPPET_LEN].rsplit(" ", 1)[0] if len(desc) > SNIPPET_LEN else desc,
+        "snippet": description[:SNIPPET_LEN].rsplit(" ", 1)[0] if len(description) > SNIPPET_LEN else description,
         "first_seen": now_iso,
         "last_seen": now_iso,
         "ats": company["ats"],

@@ -141,6 +141,8 @@ COUNTRIES = {
     "AM": ("Armenia", 40.18, 44.51, []),
     "GE": ("Georgia", 42.32, 43.36, []),
     "AZ": ("Azerbaijan", 40.14, 47.58, []),
+    # Virtual map region for jobs explicitly open to remote work across Europe.
+    "EU": ("Europe", 50.85, 4.35, ["european union"]),
 }
 
 EUROPE = set(COUNTRIES)

@@ -1,4 +1,4 @@
-/* GullyHire front end. Plain JavaScript, no build step. Job text is rendered with textContent. */
+/* Euro-Hire front end. Plain JavaScript, no build step. Job text is rendered with textContent. */
 (() => {
   "use strict";
 
@@ -24,7 +24,7 @@
   const countryName = (() => {
     try {
       const displayNames = new Intl.DisplayNames(["en"], { type: "region" });
-      return (code) => displayNames.of(code) || code;
+      return (code) => code === "EU" ? "Europe" : (displayNames.of(code) || code);
     } catch {
       return (code) => code;
     }
@@ -432,8 +432,14 @@
   }
 
   function fillControls() {
-    const franceJobs = jobs.filter((job) => job.country === "FR").length;
-    $("country").replaceChildren(element("option", { value: "FR", text: `France (${franceJobs})` }));
+    const counts = new Map();
+    jobs.forEach((job) => {
+      if (job.country) counts.set(job.country, (counts.get(job.country) || 0) + 1);
+    });
+    $("country").replaceChildren(element("option", { value: "", text: `All Europe (${jobs.length})` }));
+    [...counts.keys()].sort((a, b) => countryName(a).localeCompare(countryName(b))).forEach((code) => {
+      $("country").append(element("option", { value: code, text: `${countryName(code)} (${counts.get(code)})` }));
+    });
     for (const role of [...ROLES, "other"]) {
       $("role").append(element("option", { value: role, text: ROLE_LABEL[role] || "Other" }));
     }
@@ -456,7 +462,7 @@
       banner.hidden = false;
     } else if (!jobs.length) {
       banner.textContent = generatedAt
-        ? "No current vacancies passed GullyHire's Europe, role and source checks in the latest successful crawl. Check again after the next refresh."
+        ? "No current vacancies passed Euro-Hire's Europe, role and source checks in the latest successful crawl. Check again after the next refresh."
         : "The first live employer crawl runs automatically after GitHub setup. No sample or fictional vacancies are shown.";
       banner.hidden = false;
     } else {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#244B3B">
-  <title>GullyHire — Find work around you</title>
+  <title>Euro-Hire — Find work around you</title>
   <meta name="description" content="Discover live job openings published on employer career boards across Europe. Filter opportunities and apply directly with employers.">
   <link rel="preconnect" href="https://unpkg.com">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
@@ -13,13 +13,12 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="#top" aria-label="GullyHire home">
+    <a class="brand" href="#top" aria-label="Euro-Hire home">
       <span class="brand-mark" aria-hidden="true"><span></span></span>
-      <span class="brand-name">GullyHire</span>
+      <span class="brand-name">Euro-Hire</span>
     </a>
     <nav class="primary-nav" aria-label="Main navigation">
       <a class="nav-link active" href="#discover">Find jobs</a>
-      <a class="nav-link" href="companies.html">Company database</a>
       <a class="nav-link" href="#employers">For employers</a>
       <button id="saved-toggle" class="saved-nav" type="button" aria-pressed="false">
         Saved jobs <span id="saved-count" class="saved-count">0</span>
@@ -32,8 +31,7 @@
     <section class="intro" id="discover" aria-labelledby="page-title">
       <div class="eyebrow">LOCAL WORK. CLEARER DISCOVERY.</div>
       <h1 id="page-title">Find work <span>around you.</span></h1>
-      <p class="intro-copy">Discover current professional opportunities from public employer career feeds in France. Check each employer listing and apply directly on its careers website.</p>
-      <p class="company-database-link"><a href="companies.html">Explore the free company database →</a> <span>No account or API key required</span></p>
+      <p class="intro-copy">Discover current professional opportunities from public employer career feeds across Europe. Check each employer listing and apply directly on its careers website.</p>
 
       <form id="search-form" class="search-panel" role="search">
         <label class="search-field">
@@ -56,7 +54,7 @@
 
       <section class="filter-panel" aria-label="Refine job search">
         <div class="filter-selects">
-          <label class="select-wrap"><span class="sr-only">Country</span><select id="country" aria-label="Country"><option value="FR" selected>France</option></select></label>
+          <label class="select-wrap"><span class="sr-only">Country</span><select id="country" aria-label="Country"><option value="" selected>All Europe</option></select></label>
           <label class="select-wrap"><span class="sr-only">Job category</span><select id="role" aria-label="Job category"><option value="">All categories</option></select></label>
           <label class="select-wrap"><span class="sr-only">Experience level</span><select id="level" aria-label="Experience level">
             <option value="">Any experience</option>
@@ -116,17 +114,16 @@
       <div>
         <span class="eyebrow">FOR EMPLOYERS</span>
         <h2>Want your vacancies on the map?</h2>
-        <p>GullyHire is currently building its employer directory from public company career feeds. Self-service job posting is not available in this early version.</p>
+        <p>Euro-Hire is currently building its employer directory from public company career feeds. Self-service job posting is not available in this early version.</p>
       </div>
       <span class="employer-note-mark" aria-hidden="true">G</span>
     </section>
   </main>
 
   <footer class="site-footer">
-    <div class="footer-brand"><span class="footer-mark" aria-hidden="true"></span><strong>GullyHire</strong></div>
+    <div class="footer-brand"><span class="footer-mark" aria-hidden="true"></span><strong>Euro-Hire</strong></div>
     <p>Vacancies link to the employer's application page. Map markers indicate the listed city, not an exact office address. Job previews are shortened; check the employer page for full requirements and current availability.</p>
     <p class="footer-small">An early-stage job discovery project. Coverage depends on the companies and career feeds currently indexed.</p>
-    <p class="footer-small">Registry acknowledgements: Contains Irish Public Sector Data licensed under a Creative Commons Attribution 4.0 International (CC BY 4.0) licence. Finnish company-register data is attributed to PRH/YTJ (CC BY 4.0); Norwegian registry data is attributed to Brønnøysundregistrene (NLOD 2.0).</p>
   </footer>
 
   <dialog id="match" class="match-dialog">
