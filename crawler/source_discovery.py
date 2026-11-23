@@ -22,16 +22,16 @@ SEARCHES = [
     ("ashby", "jobs.ashbyhq.com/*", r"^https?://jobs\.ashbyhq\.com/[^/?#]+/?$"),
     ("workable", "apply.workable.com/*", r"^https?://apply\.workable\.com/[^/?#]+/?$"),
     ("smartrecruiters", "jobs.smartrecruiters.com/*", r"^https?://jobs\.smartrecruiters\.com/[^/?#]+/?$"),
-    ("personio", "*.jobs.personio.de", r"^https?://[a-z0-9-]+\.jobs\.personio\.de/?$"),
-    ("personio", "*.jobs.personio.com", r"^https?://[a-z0-9-]+\.jobs\.personio\.com/?$"),
-    ("recruitee", "*.recruitee.com", r"^https?://[a-z0-9-]+\.recruitee\.com/?$"),
-    ("teamtailor", "*.teamtailor.com", r"^https?://[a-z0-9-]+\.teamtailor\.com/jobs/?$"),
-    ("workday", "*.myworkdayjobs.com", r"^https?://[a-z0-9-]+\.wd[0-9]+\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Z]{2}/)?[A-Za-z0-9_-]+/?$"),
-    ("breezy", "*.breezy.hr", r"^https?://[a-z0-9-]+\.breezy\.hr/?$"),
-    ("pinpoint", "*.pinpointhq.com", r"^https?://[a-z0-9-]+\.pinpointhq\.com/?$"),
-    ("bamboohr", "*.bamboohr.com", r"^https?://[a-z0-9-]+\.bamboohr\.com/careers/list/?$"),
-    ("jazzhr", "*.applytojob.com", r"^https?://[a-z0-9-]+\.applytojob\.com/apply/?$"),
-    ("keka", "*.keka.com", r"^https?://[a-z0-9-]+\.keka\.com/careers/?$"),
+    ("personio", "*.jobs.personio.de/*", r"^https?://[a-z0-9-]+\.jobs\.personio\.de/?$"),
+    ("personio", "*.jobs.personio.com/*", r"^https?://[a-z0-9-]+\.jobs\.personio\.com/?$"),
+    ("recruitee", "*.recruitee.com/*", r"^https?://[a-z0-9-]+\.recruitee\.com/?$"),
+    ("teamtailor", "*.teamtailor.com/*", r"^https?://[a-z0-9-]+\.teamtailor\.com/jobs/?$"),
+    ("workday", "*.myworkdayjobs.com/*", r"^https?://[a-z0-9-]+\.wd[0-9]+\.myworkdayjobs\.com/(?:[a-z]{2}-[A-Z]{2}/)?[A-Za-z0-9_-]+/?$"),
+    ("breezy", "*.breezy.hr/*", r"^https?://[a-z0-9-]+\.breezy\.hr/?$"),
+    ("pinpoint", "*.pinpointhq.com/*", r"^https?://[a-z0-9-]+\.pinpointhq\.com/?$"),
+    ("bamboohr", "*.bamboohr.com/careers/*", r"^https?://[a-z0-9-]+\.bamboohr\.com/careers/list/?$"),
+    ("jazzhr", "*.applytojob.com/apply/*", r"^https?://[a-z0-9-]+\.applytojob\.com/apply/?$"),
+    ("keka", "*.keka.com/careers/*", r"^https?://[a-z0-9-]+\.keka\.com/careers/?$"),
     ("homerun", "feed.homerun.co/*", r"^https?://feed\.homerun\.co/[a-z0-9-]+/?$"),
     ("gem", "jobs.gem.com/*", r"^https?://jobs\.gem\.com/[a-z0-9-]+/?$"),
     ("rippling", "ats.rippling.com/*", r"^https?://ats\.rippling\.com/[a-z0-9-]+/jobs/?$"),
@@ -79,6 +79,9 @@ def extract_board(ats: str, value: str) -> dict | None:
         return _record(ats, match.group(1), f"https://{host}/jobs.rss")
     match = re.fullmatch(r"([a-z0-9-]+)\.(wd[0-9]+)\.myworkdayjobs\.com", host)
     if ats == "workday" and match and parts:
+        # Ignore API/CXS paths; only locale/site career pages identify a board.
+        if parts[0].lower() in {"wday", "api", "login"}:
+            return None
         if re.fullmatch(r"[a-z]{2}-[A-Z]{2}", parts[0]):
             locale, site = parts[0], parts[1] if len(parts) > 1 else ""
         else:
@@ -150,11 +153,11 @@ def refresh_index(out_path: Path, max_per_pattern: int = 10000,
     discovered = dict(previous_boards)
     query_results = []
     successes = 0
-    for ats, pattern, url_regex in SEARCHES:
+    for ats, pattern, _url_regex in SEARCHES:
         try:
             body = http.get_text(index_url, params=[
                 ("url", pattern), ("output", "json"), ("filter", "status:200"),
-                ("filter", f"~url:{url_regex}"), ("collapse", "urlkey"),
+                ("collapse", "urlkey"),
                 ("limit", str(max(1, min(max_per_pattern, 10000)))),
             ])
             found = 0
