@@ -1165,6 +1165,10 @@ def discover_all_sources(con: sqlite3.Connection, http: Http, country: str | Non
     if country:
         query += " AND c.country=?"
         params.append(country.upper())
+    if country and country.upper() == "FR":
+        # France-first discovery is employer-only. Unknown headcount remains a
+        # visible coverage gap, not permission to crawl the organisation.
+        query += " AND json_extract(c.raw_json, '$.employer_scope')='employer'"
     # Do not spend batch slots on stale identity/domain checks. They need an
     # explicit registry/domain refresh first. Also use attempt backoff so an
     # unreachable or robots-disallowed site cannot stall the queue.
@@ -1191,6 +1195,50 @@ def discover_all_sources(con: sqlite3.Connection, http: Http, country: str | Non
             print(f"{row['country']} {row['registry_id']} | {row['legal_name']} | ERROR: {exc}", file=sys.stderr)
     con.commit()
     return len(rows), discovered
+
+
+def print_france_coverage(con: sqlite3.Connection) -> None:
+    """Print the France employer funnel and unresolved coverage gaps."""
+    active = con.execute("""SELECT COUNT(*) FROM companies
+      WHERE country='FR' AND registry_status='active' AND legal_person=1""").fetchone()[0]
+    bands = con.execute("""SELECT
+      COALESCE(json_extract(raw_json, '$.employer_scope'), 'unknown') AS scope,
+      COUNT(*) AS total
+      FROM companies
+      WHERE country='FR' AND registry_status='active' AND legal_person=1
+      GROUP BY scope ORDER BY scope""").fetchall()
+    employer = con.execute("""SELECT COUNT(*) FROM companies
+      WHERE country='FR' AND registry_status='active' AND legal_person=1
+      AND json_extract(raw_json, '$.employer_scope')='employer'""").fetchone()[0]
+    domain = con.execute("""SELECT COUNT(*) FROM companies
+      WHERE country='FR' AND registry_status='active' AND legal_person=1
+      AND json_extract(raw_json, '$.employer_scope')='employer'
+      AND domain_verified=1""").fetchone()[0]
+    discovery = con.execute("""SELECT COALESCE(career_discovery_status,'not_checked') AS status, COUNT(*) AS total
+      FROM companies WHERE country='FR' AND registry_status='active' AND legal_person=1
+      AND json_extract(raw_json, '$.employer_scope')='employer'
+      GROUP BY status ORDER BY status""").fetchall()
+    sources = con.execute("""SELECT
+      SUM(CASE WHEN s.approved=1 THEN 1 ELSE 0 END) AS approved,
+      SUM(CASE WHEN s.id IS NOT NULL AND s.approved=0 THEN 1 ELSE 0 END) AS pending
+      FROM companies c LEFT JOIN career_sources s ON s.company_id=c.id
+      WHERE c.country='FR' AND c.registry_status='active' AND c.legal_person=1
+      AND json_extract(c.raw_json, '$.employer_scope')='employer'""").fetchone()
+    print("FRANCE EMPLOYER COVERAGE")
+    print(f"Active legal-entity records indexed: {active}")
+    for row in bands:
+        print(f"  {row['scope']}: {row['total']}")
+    print(f"Confirmed employers (SIRENE employee band): {employer}")
+    print(f"Employers with verified official domains: {domain}")
+    print("Career discovery status:")
+    for row in discovery:
+        print(f"  {row['status']}: {row['total']}")
+    print(f"Career sources approved: {sources['approved'] or 0}")
+    print(f"Career sources pending review: {sources['pending'] or 0}")
+    unknown = next((row['total'] for row in bands if row['scope'] == 'unknown'), 0)
+    print(f"Unresolved employee-band gaps: {unknown}")
+    print("Note: SIRENE employee bands are dated statistical ranges, often N-2/N-3; "
+          "unknown values are not counted as employers. Respect non-diffusible records.")
 
 
 def print_pending(con: sqlite3.Connection) -> None:
@@ -1259,6 +1307,7 @@ def main(argv=None) -> int:
     batch.add_argument("--include-existing", action="store_true", help="Force a re-check even when a company was successfully checked within the last 90 days")
     export = sub.add_parser("export-approved", help="Export approved company sources to a small JSON snapshot for deployment")
     export.add_argument("--output", default="companies-approved.json")
+    sub.add_parser("coverage-fr", help="Show the France-first employer discovery funnel and unresolved headcount gaps")
     sub.add_parser("pending", help="List company and source approval status")
     args = parser.parse_args(argv)
     db = Path(args.db)
@@ -1334,6 +1383,8 @@ def main(argv=None) -> int:
         elif args.command == "export-approved":
             count = export_approved(db, Path(args.output))
             print(f"Exported {count} approved company sources to {args.output}.")
+        elif args.command == "coverage-fr":
+            print_france_coverage(con)
         elif args.command == "pending":
             print_pending(con)
     except (ValueError, FetchError, OSError, sqlite3.Error) as exc:
