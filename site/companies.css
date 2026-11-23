@@ -124,3 +124,84 @@
   .company-search-button { width: 100%; }
   .directory-filter-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Evidence-backed French official website directory */
+.verified-websites-section {
+  margin: 2.5rem 0;
+  padding: 1.5rem;
+  border: 1px solid var(--border, #d9e2dc);
+  border-radius: 18px;
+  background: var(--surface, #fff);
+}
+.verified-websites-section .directory-section-heading p {
+  max-width: 760px;
+}
+.verified-websites-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1.25rem 0 .75rem;
+}
+.verified-websites-toolbar label {
+  display: grid;
+  gap: .4rem;
+  flex: 1 1 320px;
+  color: var(--muted, #647067);
+  font-size: .82rem;
+  font-weight: 650;
+}
+.verified-websites-toolbar input {
+  width: 100%;
+  min-height: 44px;
+  padding: .7rem .85rem;
+  border: 1px solid var(--border, #d9e2dc);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+}
+.verified-websites-toolbar > a,
+.verified-website-links a {
+  color: var(--green, #24533f);
+  font-weight: 700;
+  text-decoration: none;
+}
+.verified-websites-results {
+  display: grid;
+  gap: .8rem;
+}
+.verified-website-card {
+  padding: 1rem;
+  border: 1px solid var(--border, #d9e2dc);
+  border-radius: 13px;
+  background: var(--surface, #fff);
+}
+.verified-website-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 1rem;
+}
+.verified-website-heading h3 {
+  margin: 0;
+}
+.verified-website-location,
+.verified-website-proof {
+  color: var(--muted, #647067);
+  font-size: .86rem;
+}
+.verified-website-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: .8rem 0;
+}
+.verified-website-proof {
+  margin: .5rem 0 0;
+  font-size: .78rem;
+}
+@media (max-width: 640px) {
+  .verified-websites-section { padding: 1rem; }
+  .verified-website-heading { flex-direction: column; }
+}
