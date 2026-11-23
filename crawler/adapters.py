@@ -18,6 +18,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
+from urllib.parse import urljoin
 
 from .http import FetchError
 
@@ -315,34 +316,78 @@ def workday(slug, http, **_):
 
 # ------------------------------------------------- Generic JSON-LD JobPosting
 def jsonld(slug, http, urls=None, **_):
-    """Fallback for custom career pages that embed schema.org JobPosting data.
-    `slug` is unused; give `urls: [...]` in companies.yaml. Honors robots.txt."""
+    """Extract schema.org JobPosting records from verified custom career pages.
+
+    Supports @graph, top-level arrays and @type arrays. This is intentionally
+    structured-data extraction, not arbitrary full-site scraping.
+    """
     out = []
-    for url in urls or []:
-        if not http.allowed_by_robots(url):
-            raise FetchError(f"robots.txt disallows {url}")
-        page = http.get_text(url)
-        for m in re.finditer(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', page, re.S | re.I):
+    seen = set()
+
+    def posting_nodes(value):
+        if isinstance(value, list):
+            for item in value:
+                yield from posting_nodes(item)
+            return
+        if not isinstance(value, dict):
+            return
+        raw_type = value.get("@type", [])
+        types = {raw_type} if isinstance(raw_type, str) else set(raw_type or [])
+        if "JobPosting" in types:
+            yield value
+        if value.get("@graph") is not None:
+            yield from posting_nodes(value["@graph"])
+        if value.get("mainEntity") is not None:
+            yield from posting_nodes(value["mainEntity"])
+
+    for page_url in urls or []:
+        if not http.allowed_by_robots(page_url):
+            raise FetchError(f"robots.txt disallows {page_url}")
+        page = http.get_text(page_url)
+        for match in re.finditer(
+            r'<script[^>]+application/ld\\+json[^>]*>(.*?)</script>',
+            page, re.S | re.I,
+        ):
             try:
-                blob = json.loads(m.group(1))
-            except ValueError:
+                blob = json.loads(html.unescape(match.group(1)).strip())
+            except (TypeError, ValueError):
                 continue
-            nodes = blob if isinstance(blob, list) else blob.get("@graph", [blob])
-            for n in nodes:
-                if not isinstance(n, dict) or n.get("@type") != "JobPosting":
+            for posting in posting_nodes(blob):
+                location = posting.get("jobLocation")
+                locations = location if isinstance(location, list) else [location]
+                location_labels = []
+                for loc in locations:
+                    if not isinstance(loc, dict):
+                        continue
+                    address = loc.get("address") or {}
+                    if isinstance(address, dict):
+                        label = ", ".join(
+                            part for part in (
+                                address.get("addressLocality"),
+                                address.get("addressRegion"),
+                                address.get("addressCountry"),
+                            ) if isinstance(part, str) and part.strip()
+                        )
+                        if label and label not in location_labels:
+                            location_labels.append(label)
+                raw_identifier = posting.get("identifier")
+                if isinstance(raw_identifier, dict):
+                    identifier = raw_identifier.get("value") or raw_identifier.get("name")
+                else:
+                    identifier = raw_identifier
+                job_url = urljoin(page_url, str(posting.get("url") or page_url))
+                job_id = str(identifier or job_url or posting.get("title") or "")
+                if not job_id or job_id in seen:
                     continue
-                loc = n.get("jobLocation")
-                loc = loc[0] if isinstance(loc, list) and loc else (loc or {})
-                addr = (loc.get("address") or {}) if isinstance(loc, dict) else {}
+                seen.add(job_id)
                 out.append({
-                    "id": str(n.get("identifier", {}).get("value") if isinstance(n.get("identifier"), dict)
-                              else n.get("identifier") or n.get("url") or n.get("title")),
-                    "title": n.get("title", ""),
-                    "url": n.get("url") or url,
-                    "location": ", ".join(x for x in (addr.get("addressLocality"), addr.get("addressCountry")) if isinstance(x, str)),
-                    "remote": True if n.get("jobLocationType") == "TELECOMMUTE" else None,
-                    "posted": _date(n.get("datePosted")),
-                    "description": strip_html(n.get("description")),
+                    "id": job_id,
+                    "title": posting.get("title", ""),
+                    "url": job_url,
+                    "location": " | ".join(location_labels),
+                    "remote": True if posting.get("jobLocationType") == "TELECOMMUTE" else None,
+                    "posted": _date(posting.get("datePosted")),
+                    "description": strip_html(posting.get("description")),
                 })
     return out
 
