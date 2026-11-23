@@ -738,9 +738,11 @@ def test_total_live_feed_outage_keeps_previous_published_jobs(tmp_path, monkeypa
     assert json.loads(jobs_path.read_text(encoding="utf-8")) == original
 
 
-def test_release_starts_with_no_sample_jobs():
+def test_release_contains_only_real_non_demo_job_feed():
     from pathlib import Path
     payload = json.loads(Path("site/data/jobs.json").read_text(encoding="utf-8"))
-    assert payload["count"] == 0
-    assert payload["jobs"] == []
     assert payload["demo"] is False
+    assert isinstance(payload["jobs"], list)
+    assert payload["count"] == len(payload["jobs"])
+    # Live crawls populate this file; reject the old fictional demo employer.
+    assert all("Northwind Labs" not in str(job.get("company", "")) for job in payload["jobs"])
