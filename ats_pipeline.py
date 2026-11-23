@@ -1,4 +1,4 @@
-"""France-first ATS ingestion, public WTTJ feed and INSEE enrichment.
+"""Europe-wide public ATS ingestion with a strict 29-day vacancy window.
 
 Only public vacancy endpoints are used. No applicant data, private recruiter
 contact data, paid job APIs, cookies or authenticated employer APIs are collected.
@@ -102,6 +102,115 @@ FR_REGIONS = (
     "bourgogne franche comte", "centre val de loire", "corse",
 )
 
+
+EUROPE_COUNTRY_NAMES = dict(item.split(":", 1) for item in (
+    "AL:Albania|AD:Andorra|AT:Austria|BY:Belarus|BE:Belgium|BA:Bosnia and Herzegovina|"
+    "BG:Bulgaria|HR:Croatia|CY:Cyprus|CZ:Czechia|DK:Denmark|EE:Estonia|FO:Faroe Islands|"
+    "FI:Finland|FR:France|DE:Germany|GI:Gibraltar|GR:Greece|GG:Guernsey|HU:Hungary|"
+    "IS:Iceland|IE:Ireland|IM:Isle of Man|IT:Italy|JE:Jersey|XK:Kosovo|LV:Latvia|"
+    "LI:Liechtenstein|LT:Lithuania|LU:Luxembourg|MT:Malta|MD:Moldova|MC:Monaco|"
+    "ME:Montenegro|NL:Netherlands|MK:North Macedonia|NO:Norway|PL:Poland|PT:Portugal|"
+    "RO:Romania|RU:Russia|SM:San Marino|RS:Serbia|SK:Slovakia|SI:Slovenia|ES:Spain|"
+    "SE:Sweden|CH:Switzerland|TR:Türkiye|UA:Ukraine|GB:United Kingdom|VA:Vatican City|"
+    "GE:Georgia|AM:Armenia|AZ:Azerbaijan"
+).split("|"))
+EUROPE_COUNTRY_CODES = set(EUROPE_COUNTRY_NAMES) | {"EU"}
+COUNTRY_ALIASES = dict(item.split(":", 1) for item in (
+    "uk:GB|great britain:GB|britain:GB|england:GB|scotland:GB|wales:GB|"
+    "the netherlands:NL|holland:NL|czech republic:CZ|bosnia:BA|"
+    "bosnia herzegovina:BA|north macedonia:MK|macedonia:MK|turkey:TR|"
+    "moldova:MD|russian federation:RU|france:FR|allemagne:DE|deutschland:DE|"
+    "belgique:BE|belgium:BE|españa:ES|espagne:ES|italia:IT|italie:IT|"
+    "österreich:AT|autriche:AT|schweiz:CH|suisse:CH|sverige:SE|suède:SE|"
+    "norge:NO|norvège:NO|danmark:DK|danemark:DK|suomi:FI|finlande:FI|"
+    "irlande:IE|eire:IE|polska:PL|pologne:PL|românia:RO|roumanie:RO|"
+    "bulgarie:BG|grecia:GR|grèce:GR|hongrie:HU|croatie:HR|hrvatska:HR|"
+    "slovensko:SK|slovaquie:SK|slovenija:SI|slovénie:SI|eesti:EE|estonie:EE|"
+    "latvija:LV|lettonie:LV|lietuva:LT|lituanie:LT|bélarus:BY|ukraina:UA|"
+    "islande:IS|shqipëria:AL|srbija:RS|crna gora:ME|kosovo:XK|"
+    "europe:EU|european union:EU|eu:EU|united states:US|usa:US|"
+    "united states of america:US|canada:CA|india:IN|australia:AU"
+).split("|"))
+COUNTRY_ALIASES.update({name.lower(): code for code, name in EUROPE_COUNTRY_NAMES.items()})
+EUROPE_CITY_CODES = dict(item.split(":", 1) for item in (
+    "amsterdam:NL|rotterdam:NL|utrecht:NL|brussels:BE|antwerp:BE|ghent:BE|"
+    "paris:FR|lyon:FR|marseille:FR|toulouse:FR|bordeaux:FR|lille:FR|"
+    "london:GB|manchester:GB|edinburgh:GB|dublin:IE|berlin:DE|munich:DE|"
+    "münchen:DE|hamburg:DE|frankfurt:DE|cologne:DE|madrid:ES|barcelona:ES|"
+    "valencia:ES|rome:IT|milan:IT|milano:IT|lisbon:PT|porto:PT|zurich:CH|"
+    "geneva:CH|vienna:AT|wien:AT|copenhagen:DK|stockholm:SE|oslo:NO|"
+    "helsinki:FI|warsaw:PL|krakow:PL|prague:CZ|budapest:HU|athens:GR|"
+    "bucharest:RO|sofia:BG|zagreb:HR|ljubljana:SI|tallinn:EE|riga:LV|"
+    "vilnius:LT|bratislava:SK|reykjavik:IS|kyiv:UA|belgrade:RS|"
+    "sarajevo:BA|tirana:AL|podgorica:ME|skopje:MK|istanbul:TR|tbilisi:GE"
+).split("|"))
+EUROPE_CENTROIDS = {
+    "AL": (41.15,20.17), "AD": (42.55,1.58), "AT": (47.52,14.55),
+    "BY": (53.71,27.95), "BE": (50.85,4.35), "BA": (43.92,17.68),
+    "BG": (42.73,25.49), "HR": (45.10,15.20), "CY": (35.13,33.43),
+    "CZ": (49.82,15.47), "DK": (56.26,9.50), "EE": (58.60,25.01),
+    "FI": (61.92,25.75), "FR": (46.60,1.89), "DE": (51.17,10.45),
+    "GR": (39.07,21.82), "HU": (47.16,19.50), "IS": (64.96,-19.02),
+    "IE": (53.14,-7.69), "IT": (41.87,12.57), "LV": (56.88,24.60),
+    "LI": (47.17,9.56), "LT": (55.17,23.88), "LU": (49.82,6.13),
+    "MT": (35.94,14.38), "MD": (47.01,28.86), "MC": (43.74,7.42),
+    "ME": (42.71,19.37), "NL": (52.13,5.29), "MK": (41.61,21.75),
+    "NO": (60.47,8.47), "PL": (51.92,19.15), "PT": (39.40,-8.22),
+    "RO": (45.94,24.97), "RU": (60.0,90.0), "RS": (44.02,21.01),
+    "SK": (48.67,19.70), "SI": (46.15,14.99), "ES": (40.46,-3.75),
+    "SE": (60.13,18.64), "CH": (46.82,8.23), "TR": (38.96,35.24),
+    "UA": (48.38,31.17), "GB": (55.38,-3.44), "GE": (42.32,43.36),
+    "AM": (40.07,45.04), "AZ": (40.14,47.58), "EU": (50.85,4.35),
+}
+MAX_JOB_AGE_DAYS = 29
+
+
+def normalise_country_code(value: Any) -> str | None:
+    raw = str(value or "").strip().upper()
+    if not raw:
+        return None
+    if raw in EUROPE_COUNTRY_CODES:
+        return raw
+    if raw == "UK":
+        return "GB"
+    if re.fullmatch(r"[A-Z]{2}", raw):
+        return None
+    return COUNTRY_ALIASES.get(norm_text(value))
+
+
+def is_europe_location(location: str, country: str | None = None) -> tuple[bool, str | None]:
+    raw_country = str(country or "").strip().upper()
+    code = normalise_country_code(country)
+    if code:
+        return True, code
+    if re.fullmatch(r"[A-Z]{2}", raw_country):
+        return False, None
+    text = norm_text(location)
+    if not text:
+        return False, None
+    if re.search(r"\b(europe|european union|remote eu|eu remote)\b", text):
+        return True, "EU"
+    for alias, alias_code in sorted(COUNTRY_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+        needle = norm_text(alias)
+        if needle and re.search(rf"\b{re.escape(needle)}\b", text):
+            return (True, alias_code) if alias_code in EUROPE_COUNTRY_CODES else (False, None)
+    for city, city_code in sorted(EUROPE_CITY_CODES.items(), key=lambda item: len(item[0]), reverse=True):
+        if re.search(rf"\b{re.escape(norm_text(city))}\b", text):
+            return True, city_code
+    return False, None
+
+
+def city_from_location(location: str, country_code: str | None) -> str | None:
+    text = norm_text(location)
+    for city, code in sorted(EUROPE_CITY_CODES.items(), key=lambda item: len(item[0]), reverse=True):
+        if code == country_code and re.search(rf"\b{re.escape(norm_text(city))}\b", text):
+            return city.title()
+    if country_code == "FR":
+        for city in FR_CITIES:
+            if re.search(rf"\b{re.escape(norm_text(city))}\b", text):
+                return city.title()
+    return None
+
 ROLE_RULES = [
     ("engineering", r"engineer|developer|software|devops|sre|backend|frontend|full.?stack|security|platform|architect|qa\b|mobile|ios|android|ingénieur|développeur"),
     ("data", r"data scientist|data engineer|data analyst|machine learning|\bml\b|\bai\b|analytics|bi analyst|research scientist"),
@@ -149,41 +258,23 @@ def company_name_from_slug(slug: str) -> str:
 
 
 def is_france_location(location: str, country: str | None = None) -> tuple[bool, str | None]:
-    """Return whether a role is demonstrably France-based and its best city.
-
-    A generic 'Remote' role is not treated as France-based merely because the
-    employer is French. Remote roles must explicitly name France or a French
-    office/country in the source payload.
-    """
-    code = str(country or "").strip().upper()
-    raw = str(location or "").strip()
-    text = norm_text(raw)
-    if code in {"FR", "FRANCE"}:
-        city = next((name.title() for name in FR_CITIES if re.search(rf"\b{re.escape(name)}\b", text)), None)
-        return True, city
-    if code and code not in {"FR", "FRANCE"}:
+    """Compatibility helper for France-specific lookups."""
+    ok, code = is_europe_location(location, country)
+    if not ok or code != "FR":
         return False, None
-    if not text:
-        return False, None
-    if re.search(r"\b(remote|worldwide|europe|emea|global)\b", text) and "france" not in text and "fr " not in text:
-        # Keep explicit "Remote France"; drop Remote Europe/global.
-        if not re.search(r"\b(remote france|france remote|fr remote|remote fr)\b", text):
-            return False, None
-    city = next((name.title() for name in FR_CITIES if re.search(rf"\b{re.escape(name)}\b", text)), None)
-    if re.search(r"\b(france|francaise|francais|fr)\b", text) or city:
-        return True, city
-    if any(region in text for region in FR_REGIONS):
-        return True, None
-    return False, None
+    return True, city_from_location(location, "FR")
 
 
-def coordinates(city: str | None) -> tuple[float, float]:
+def coordinates(city: str | None, country_code: str | None = None) -> tuple[float, float]:
     if city:
         key = norm_text(city)
         for name, coords in FR_CITIES.items():
             if norm_text(name) == key:
                 return coords
-    return (46.6034, 1.8883)  # France centroid; city not published by source.
+        mapped = EUROPE_CITY_CODES.get(key)
+        if mapped:
+            return EUROPE_CENTROIDS.get(mapped, EUROPE_CENTROIDS["EU"])
+    return EUROPE_CENTROIDS.get(country_code or "EU", EUROPE_CENTROIDS["EU"])
 
 
 def classify_role(title: str) -> str:
@@ -199,6 +290,31 @@ def classify_level(title: str) -> str:
         if re.search(pattern, str(title or ""), re.I):
             return level
     return "mid"
+
+
+def is_recent_posting(value: Any, today: date | None = None) -> bool:
+    """Only accept dated postings from today back through the previous 29 days."""
+    parsed = parse_date(value)
+    if not parsed:
+        return False
+    try:
+        age = ((today or datetime.now(timezone.utc).date()) - date.fromisoformat(parsed)).days
+    except ValueError:
+        return False
+    return 0 <= age <= MAX_JOB_AGE_DAYS
+
+
+def is_professional_job(title: str) -> bool:
+    """Exclude clearly manual-trade and frontline service vacancies."""
+    excluded = re.compile(
+        r"\b(plumber|plumbing|electrician|carpenter|welder|bricklayer|roofer|"
+        r"plasterer|painter and decorator|house painter|cleaner|housekeeper|"
+        r"waiter|waitress|bartender|barista|dishwasher|delivery driver|courier|"
+        r"forklift operator|warehouse picker|warehouse operative|packer|"
+        r"construction labourer|construction laborer|farm worker|gardener)\b",
+        re.IGNORECASE,
+    )
+    return not bool(excluded.search(str(title or "")))
 
 
 def parse_date(value: Any) -> str | None:
@@ -252,7 +368,8 @@ def init_db(path: Path) -> sqlite3.Connection:
       last_probed_at TEXT,
       last_success_at TEXT,
       last_error TEXT,
-      has_fr_jobs INTEGER NOT NULL DEFAULT 0
+      has_fr_jobs INTEGER NOT NULL DEFAULT 0,
+      has_europe_jobs INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_ats_boards_queue
       ON ats_boards(has_fr_jobs, last_probed_at, ats_type);
@@ -319,6 +436,10 @@ def init_db(path: Path) -> sqlite3.Connection:
       last_error TEXT
     );
     """)
+    board_columns = {row["name"] for row in conn.execute("PRAGMA table_info(ats_boards)")}
+    if "has_europe_jobs" not in board_columns:
+        conn.execute("ALTER TABLE ats_boards ADD COLUMN has_europe_jobs INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE ats_boards SET has_europe_jobs=has_fr_jobs WHERE has_fr_jobs=1")
     conn.commit()
     return conn
 
@@ -393,7 +514,7 @@ def upsert_job(
         job_key, dedupe_key, company_key, source_type, source_id, title, department,
         location, city, country_code, contract_type, remote, salary_min, salary_max,
         salary_currency, posted_at, apply_url, description, first_seen_at, last_seen_at, is_active
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'FR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
       ON CONFLICT(job_key) DO UPDATE SET
         dedupe_key=excluded.dedupe_key,
         company_key=excluded.company_key,
@@ -401,6 +522,7 @@ def upsert_job(
         department=excluded.department,
         location=excluded.location,
         city=excluded.city,
+        country_code=excluded.country_code,
         contract_type=excluded.contract_type,
         remote=excluded.remote,
         salary_min=excluded.salary_min,
@@ -414,6 +536,7 @@ def upsert_job(
     """, (
         job_key, dedupe_key, company["company_key"], source_type, source_id,
         raw["title"], raw.get("department"), raw.get("location"), city,
+        raw.get("country_code") or "EU",
         raw.get("contract_type"), raw.get("remote"), raw.get("salary_min"),
         raw.get("salary_max"), raw.get("salary_currency"), raw.get("posted_at"),
         url, raw.get("description", "")[:12000], first_seen, now,
@@ -433,20 +556,23 @@ def store_board_result(
     conn: sqlite3.Connection, board: dict, raw_jobs: list[dict], run_started: str,
     *, deactivate: bool = True, update_board: bool = True,
 ) -> int:
-    """Persist one complete public ATS board response.
-
-    WTTJ is a global index, so each hit supplies its own company identity and
-    stale WTTJ jobs are closed only after the complete global feed succeeds.
-    """
+    """Persist a complete feed response and publish fresh professional European roles."""
     board_key = f"{board['ats_type']}:{board['ats_slug']}"
-    is_live_fr = False
+    has_european_roles = False
+    has_french_roles = False
     kept = 0
     for raw in raw_jobs:
         if not raw.get("title") or not raw.get("apply_url"):
             continue
-        in_france, city = is_france_location(raw.get("location", ""), raw.get("country_code"))
-        if not in_france:
+        in_europe, country_code = is_europe_location(raw.get("location", ""), raw.get("country_code"))
+        if not in_europe or not is_professional_job(raw["title"]):
             continue
+        has_european_roles = True
+        if country_code == "FR":
+            has_french_roles = True
+        if not is_recent_posting(raw.get("posted_at")):
+            continue
+        raw["country_code"] = country_code
         company_key = raw.get("company_key") or board_key
         company_ats_type = raw.get("company_ats_type") or board["ats_type"]
         company_ats_slug = raw.get("company_ats_slug") or board["ats_slug"]
@@ -461,25 +587,19 @@ def store_board_result(
         raw["source_type"] = raw.get("source_type") or board["ats_type"]
         source_id = raw.get("source_id") or raw["apply_url"]
         raw["source_id"] = f"{company_key}:{source_id}"
-        raw["city"] = raw.get("city") or city
-        if not raw["city"] and raw.get("location"):
-            raw["city"] = next(
-                (name.title() for name in FR_CITIES if re.search(rf"\b{re.escape(name)}\b", norm_text(raw["location"]))),
-                None,
-            )
+        raw["city"] = raw.get("city") or city_from_location(raw.get("location", ""), country_code)
         raw["remote"] = "remote" if raw.get("remote") else ""
         upsert_job(conn, company, raw, seen_at=run_started)
-        is_live_fr = True
         kept += 1
 
     if update_board:
         conn.execute("""
           UPDATE ats_boards SET
-            last_probed_at=?, last_success_at=?, last_error=NULL, has_fr_jobs=?
+            last_probed_at=?, last_success_at=?, last_error=NULL,
+            has_fr_jobs=?, has_europe_jobs=?
           WHERE board_key=?
-        """, (run_started, utc_now(), int(is_live_fr), board_key))
+        """, (run_started, utc_now(), int(has_french_roles), int(has_european_roles), board_key))
     if deactivate:
-        # A role is closed only after a complete, successful board response.
         deactivate_unseen_jobs(conn, board_key, board["ats_type"], run_started)
     return kept
 
@@ -545,7 +665,7 @@ async def fetch_ats_board(http: "PoliteHTTP", board: dict) -> tuple[list[dict], 
         elif provider == "taleez":
             url = f"https://{slug}.taleez.com/api/careez"
         elif provider == "smartrecruiters":
-            url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=100&country=FR"
+            url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=100"
         else:
             return [], f"Unsupported public ATS: {provider}"
 
@@ -785,6 +905,8 @@ async def fetch_ats_board(http: "PoliteHTTP", board: dict) -> tuple[list[dict], 
                 offset += len(items)
                 if not items or offset >= total:
                     break
+            if total is not None and offset < total:
+                raise ValueError("SmartRecruiters board exceeded the 5,000-posting safety cap; refusing to expire jobs from a partial feed")
             return [item for item in results if item], None
 
         if provider == "taleez":
@@ -841,11 +963,17 @@ def normalise_wttj_hit(hit: dict) -> dict | None:
         return None
 
     offices = hit.get("offices") or []
-    office = offices[0] if offices else {}
+    office = next((
+        item for item in offices
+        if is_europe_location(
+            ", ".join(str(item.get(k) or "") for k in ("city", "state", "country")),
+            item.get("country_code"),
+        )[0]
+    ), offices[0] if offices else {})
     location = ", ".join(str(x) for x in (
         office.get("city"), office.get("state"), office.get("country")
     ) if x)
-    country_code = str(office.get("country_code") or "").upper() or None
+    _, country_code = is_europe_location(location, office.get("country_code"))
     if hit.get("remote") == "fulltime":
         location = (location + ", Remote").strip(", ")
     raw = _raw_job(
@@ -872,8 +1000,8 @@ def normalise_wttj_hit(hit: dict) -> dict | None:
     return raw
 
 
-async def fetch_wttj_france_jobs(http: "PoliteHTTP") -> tuple[list[dict], str | None]:
-    """Read WTTJ's public frontend index, restricted server-side to France.
+async def fetch_wttj_europe_jobs(http: "PoliteHTTP") -> tuple[list[dict], str | None]:
+    """Read WTTJ's public frontend index for European offices.
 
     This is a public frontend search interface, not a vendor-published third-party
     API. The key is the public client key served by /api/env; it is never stored.
@@ -895,7 +1023,10 @@ async def fetch_wttj_france_jobs(http: "PoliteHTTP") -> tuple[list[dict], str | 
                 "query": "",
                 "hitsPerPage": "1000",
                 "page": str(page),
-                "filters": "offices.country_code:FR",
+                "filters": " OR ".join(
+                    f"offices.country_code:{code}"
+                    for code in sorted(EUROPE_COUNTRY_CODES - {"EU"})
+                ),
                 "attributesToRetrieve": WTTJ_ATTRS,
             }
             response = await http.post_json(
@@ -922,6 +1053,11 @@ async def fetch_wttj_france_jobs(http: "PoliteHTTP") -> tuple[list[dict], str | 
         return jobs, None
     except Exception as exc:
         return [], f"{type(exc).__name__}: {exc}"
+
+
+async def fetch_wttj_france_jobs(http: "PoliteHTTP") -> tuple[list[dict], str | None]:
+    """Backward-compatible alias; results are now Europe-wide."""
+    return await fetch_wttj_europe_jobs(http)
 
 
 class PoliteHTTP:
@@ -1131,7 +1267,10 @@ def export_data(conn: sqlite3.Connection, generated_at: str | None = None) -> di
       FROM jobs j
       JOIN companies c ON c.company_key=j.company_key
       WHERE j.is_active=1
-      ORDER BY COALESCE(j.posted_at, j.first_seen_at) DESC, c.name, j.title
+        AND j.posted_at IS NOT NULL
+        AND date(j.posted_at) >= date('now', '-29 days')
+        AND date(j.posted_at) <= date('now')
+      ORDER BY date(j.posted_at) DESC, c.name, j.title
     """).fetchall()
     selected: dict[str, dict] = {}
     for row in rows:
@@ -1144,16 +1283,18 @@ def export_data(conn: sqlite3.Connection, generated_at: str | None = None) -> di
     jobs = []
     naf_groups: dict[str, list[dict]] = defaultdict(list)
     for row in selected.values():
-        lat, lon = coordinates(row.get("city"))
+        country_code = row.get("country_code") or "EU"
+        lat, lon = coordinates(row.get("city"), country_code)
+        country_label = EUROPE_COUNTRY_NAMES.get(country_code, "Europe" if country_code == "EU" else country_code)
         job = {
             "id": row["job_key"],
             "company": row["company_name"],
             "company_slug": row["company_key"],
             "title": row["title"],
             "url": row["apply_url"],
-            "location": row.get("location") or row.get("city") or "France",
-            "city": row.get("city") or "France",
-            "country": "FR",
+            "location": row.get("location") or row.get("city") or country_label,
+            "city": row.get("city") or (("Remote " + country_label) if row.get("remote") == "remote" else country_label),
+            "country": country_code,
             "lat": lat, "lon": lon,
             "remote": row.get("remote") == "remote",
             "role": classify_role(row["title"]),
@@ -1209,11 +1350,14 @@ def write_exports(conn: sqlite3.Connection, json_path: Path = JSON_DEFAULT,
         for row in conn.execute("""
           SELECT j.job_key AS id, j.title, c.name AS company, c.siren,
                  c.naf_code, c.naf_code_rev2, c.naf_label, j.city, j.location,
-                 j.contract_type, j.remote, j.salary_min, j.salary_max,
+                 j.country_code, j.contract_type, j.remote, j.salary_min, j.salary_max,
                  j.salary_currency, j.posted_at AS posted, j.apply_url,
                  j.source_type, c.insee_match_status
           FROM jobs j JOIN companies c ON c.company_key=j.company_key
-          WHERE j.is_active=1 ORDER BY COALESCE(j.posted_at,j.first_seen_at) DESC
+          WHERE j.is_active=1 AND j.posted_at IS NOT NULL
+            AND date(j.posted_at) >= date('now', '-29 days')
+            AND date(j.posted_at) <= date('now')
+          ORDER BY date(j.posted_at) DESC
         """):
             writer.writerow(dict(row))
     site_data = {
