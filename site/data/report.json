@@ -1,9 +1,113 @@
 {
-  "generated_at": null,
-  "feeds_ok": 0,
-  "feeds_total": 0,
-  "jobs_published": 0,
-  "jobs_rejected": 0,
-  "jobs_held_for_review": 0,
-  "companies": []
+ "generated_at": "2026-11-23T14:03:27+00:00",
+ "feeds_ok": 7,
+ "feeds_total": 7,
+ "jobs_published": 301,
+ "jobs_rejected": 778,
+ "jobs_held_for_review": 60,
+ "companies": [
+  {
+   "company": "ElevenLabs",
+   "slug": "elevenlabs",
+   "ats": "ashby",
+   "ok": true,
+   "raw": 123,
+   "kept": 59,
+   "rejected": 52,
+   "review": 12,
+   "reasons": {
+    "outside Europe or occupation not in launch taxonomy": 52,
+    "occupation is not in the approved professional-role taxonomy": 12
+   },
+   "error": null
+  },
+  {
+   "company": "Hugging Face",
+   "slug": "huggingface",
+   "ats": "workable",
+   "ok": true,
+   "raw": 10,
+   "kept": 0,
+   "rejected": 10,
+   "review": 0,
+   "reasons": {
+    "vacancy URL does not match the approved career-board host and identifier": 10
+   },
+   "error": null
+  },
+  {
+   "company": "Linear",
+   "slug": "linear",
+   "ats": "ashby",
+   "ok": true,
+   "raw": 32,
+   "kept": 9,
+   "rejected": 23,
+   "review": 0,
+   "reasons": {
+    "outside Europe or occupation not in launch taxonomy": 23
+   },
+   "error": null
+  },
+  {
+   "company": "Spotify",
+   "slug": "spotify",
+   "ats": "lever",
+   "ok": true,
+   "raw": 90,
+   "kept": 44,
+   "rejected": 43,
+   "review": 3,
+   "reasons": {
+    "outside Europe or occupation not in launch taxonomy": 43,
+    "occupation is not in the approved professional-role taxonomy": 3
+   },
+   "error": null
+  },
+  {
+   "company": "Stripe",
+   "slug": "stripe",
+   "ats": "greenhouse",
+   "ok": true,
+   "raw": 777,
+   "kept": 165,
+   "rejected": 568,
+   "review": 44,
+   "reasons": {
+    "outside Europe or occupation not in launch taxonomy": 565,
+    "occupation is not in the approved professional-role taxonomy": 44,
+    "vacancy contains a high-risk payment or money-transfer request": 3
+   },
+   "error": null
+  },
+  {
+   "company": "Supabase",
+   "slug": "supabase",
+   "ats": "ashby",
+   "ok": true,
+   "raw": 80,
+   "kept": 5,
+   "rejected": 74,
+   "review": 1,
+   "reasons": {
+    "outside Europe or occupation not in launch taxonomy": 74,
+    "occupation is not in the approved professional-role taxonomy": 1
+   },
+   "error": null
+  },
+  {
+   "company": "Synthesia",
+   "slug": "synthesia",
+   "ats": "ashby",
+   "ok": true,
+   "raw": 27,
+   "kept": 19,
+   "rejected": 8,
+   "review": 0,
+   "reasons": {
+    "outside Europe or occupation not in launch taxonomy": 8
+   },
+   "error": null
+  }
+ ]
 }
