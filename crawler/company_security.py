@@ -289,8 +289,6 @@ def screen_vacancy(raw: dict, company: dict) -> tuple[str, list[str]]:
         return "reject", ["vacancy contains a high-risk payment or money-transfer request"]
     if FRAUD_REVIEW_RE.search(blob):
         return "review", ["vacancy contains a recruitment-risk signal requiring human review"]
-    from .normalize import classify
-    role, _ = classify(title, raw.get("department"))
-    if role == "other":
-        return "review", ["occupation is not in the approved professional-role taxonomy"]
+    # "Other" is a valid display category, not a reason to hide a legitimate
+    # vacancy. Manual/service roles and fraud signals are screened above.
     return "publish", []
