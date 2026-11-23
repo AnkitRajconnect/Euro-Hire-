@@ -213,6 +213,76 @@ def test_exports_group_jobs_by_naf_code(tmp_path):
 
 
 
+def test_smartrecruiters_paginates_without_country_lock():
+    import asyncio
+
+    class FakeSmartRecruitersHTTP:
+        def __init__(self):
+            self.urls = []
+
+        async def robots_allowed(self, url):
+            return True
+
+        async def get_json(self, url, **kwargs):
+            self.urls.append(url)
+            offset = int(url.split("offset=")[1]) if "offset=" in url else 0
+            if offset == 0:
+                return {
+                    "totalFound": 101,
+                    "content": [{
+                        "id": f"posting-{i}", "name": "Account Executive",
+                        "releasedDate": "2026-11-22",
+                        "location": {"city": "Berlin", "country": "Germany",
+                                     "fullLocation": "Berlin, Germany"},
+                    } for i in range(100)],
+                }
+            return {
+                "totalFound": 101,
+                "content": [{
+                    "id": "posting-100", "name": "Finance Manager",
+                    "releasedDate": "2026-11-22",
+                    "location": {"city": "Amsterdam", "country": "Netherlands",
+                                 "fullLocation": "Amsterdam, Netherlands"},
+                }],
+            }
+
+    fake = FakeSmartRecruitersHTTP()
+    rows, error = asyncio.run(fetch_ats_board(fake, {
+        "ats_type": "smartrecruiters", "ats_slug": "exampleco",
+        "board_url": "https://careers.smartrecruiters.com/exampleco",
+    }))
+    assert error is None
+    assert len(rows) == 101
+    assert all("country=FR" not in url for url in fake.urls)
+    assert "offset=100" in fake.urls[-1]
+
+
+def test_greenhouse_remote_jobs_include_office_locations():
+    import asyncio
+
+    class FakeGreenhouseHTTP:
+        async def robots_allowed(self, url):
+            return True
+
+        async def get_json(self, url, **kwargs):
+            return {"jobs": [{
+                "id": 1, "title": "Account Executive",
+                "absolute_url": "https://boards.greenhouse.io/exampleco/jobs/1",
+                "location": {"name": "Remote"},
+                "offices": [{"name": "London, United Kingdom"}],
+                "first_published": "2026-11-22",
+            }]}
+
+    rows, error = asyncio.run(fetch_ats_board(FakeGreenhouseHTTP(), {
+        "ats_type": "greenhouse", "ats_slug": "exampleco",
+        "board_url": "https://boards.greenhouse.io/exampleco",
+    }))
+    assert error is None
+    assert len(rows) == 1
+    assert "London" in rows[0]["location"]
+    assert "United Kingdom" in rows[0]["location"]
+
+
 def test_smartrecruiters_public_feed_parses_france_posts():
     import asyncio
 
