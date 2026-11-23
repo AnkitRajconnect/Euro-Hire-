@@ -617,16 +617,16 @@ def ingest_wikidata_siren_websites(con, http: Http, *, pages: int = 3,
 
     for _ in range(pages):
         query = (
-            'PREFIX wd: <http://www.wikidata.org/entity/>\\n'
-            'PREFIX wdt: <http://www.wikidata.org/prop/direct/>\\n'
-            'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\\n'
-            'SELECT ?company ?siren ?website ?label WHERE {\\n'
-            '  ?company wdt:P17 wd:Q142 ; wdt:P1616 ?siren ; wdt:P856 ?website .\\n'
-            '  OPTIONAL { ?company rdfs:label ?label . FILTER(LANG(?label) = "fr") }\\n'
-            '  FILTER(REGEX(REPLACE(STR(?siren), "[^0-9]", ""), "^[0-9]{9}$"))\\n'
-            '}\\n'
-            'ORDER BY STR(?siren) STR(?company) STR(?website)\\n'
-            'LIMIT ' + str(page_size) + '\\nOFFSET ' + str(offset)
+            'PREFIX wd: <http://www.wikidata.org/entity/>\n'
+            'PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n'
+            'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\n'
+            'SELECT ?company ?siren ?website ?label WHERE {\n'
+            '  ?company wdt:P17 wd:Q142 ; wdt:P1616 ?siren ; wdt:P856 ?website .\n'
+            '  OPTIONAL { ?company rdfs:label ?label . FILTER(LANG(?label) = "fr") }\n'
+            '  FILTER(REGEX(REPLACE(STR(?siren), "[^0-9]", ""), "^[0-9]{9}$"))\n'
+            '}\n'
+            'ORDER BY STR(?siren) STR(?company) STR(?website)\n'
+            'LIMIT ' + str(page_size) + '\nOFFSET ' + str(offset)
         )
         payload = http.get_json(
             WIKIDATA_SPARQL,
