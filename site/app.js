@@ -4,7 +4,7 @@
 
   const $ = (id) => document.getElementById(id);
   const PAGE_SIZE = 25;
-  const STORAGE_KEY = "gullyhire:saved-job-ids:v1";
+  const STORAGE_KEY = "eurohirefr:saved-job-ids:v1";
   const ROLES = ["engineering", "data", "product", "design", "sales", "marketing", "support", "operations", "finance", "legal", "people", "procurement", "admin", "business", "healthcare", "education", "leadership"];
   const ROLE_LABEL = {
     engineering: "Engineering", data: "Data & ML", product: "Product", design: "Design",
@@ -436,7 +436,7 @@
     jobs.forEach((job) => {
       if (job.country) counts.set(job.country, (counts.get(job.country) || 0) + 1);
     });
-    $("country").replaceChildren(element("option", { value: "", text: `All Europe (${jobs.length})` }));
+    $("country").replaceChildren(element("option", { value: "", text: `All France (${jobs.length})` }));
     [...counts.keys()].sort((a, b) => countryName(a).localeCompare(countryName(b))).forEach((code) => {
       $("country").append(element("option", { value: code, text: `${countryName(code)} (${counts.get(code)})` }));
     });
@@ -559,7 +559,8 @@
       generatedAt = data.generated_at || null;
       // Never render placeholder/demo rows, even if an old data file is accidentally uploaded.
       jobs = data.demo === true ? [] : (Array.isArray(data.jobs) ? data.jobs.filter((job) =>
-        job && job.ats !== "demo" && !String(job.id || "").startsWith("demo:") &&
+        job && job.country === "FR" && job.ats !== "demo" &&
+        !String(job.id || "").startsWith("demo:") &&
         typeof job.url === "string" && job.url.startsWith("https://")
       ) : []);
     } catch (error) {

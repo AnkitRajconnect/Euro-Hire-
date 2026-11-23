@@ -1,0 +1,74 @@
+name: Euro-Hire weekly ATS discovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "ats_pipeline.py"
+      - "commoncrawl_index.py"
+      - "discover_companies.py"
+      - "sync_jobs.py"
+      - "requirements.txt"
+      - "test_pipeline.py"
+      - ".github/workflows/weekly_discovery.yml"
+  schedule:
+    - cron: "0 2 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: eurohire-france-data
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+      - name: Test pipeline
+        run: python -m pytest -q
+      - name: Discover ATS boards, French jobs and INSEE records
+        env:
+          EUROHIRE_CONTACT: https://github.com/${{ github.repository }}
+        run: python discover_companies.py --max-boards 10000 --crawl-limit 3 --max-insee 5000
+      - name: Commit database and exports
+        run: |
+          git config user.name 'eurohire-bot'
+          git config user.email 'eurohire-bot@users.noreply.github.com'
+          git add data/jobs.db data/active_jobs.json data/active_jobs.csv data/pipeline_report.json site/data/jobs.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Discover French ATS boards and vacancies $(date -u +%F)"
+            git push
+          fi
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+  deploy:
+    needs: discover
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+      actions: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy Euro-Hire France
+        id: deployment
+        uses: actions/deploy-pages@v5
