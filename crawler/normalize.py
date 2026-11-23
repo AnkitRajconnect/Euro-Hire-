@@ -153,9 +153,11 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
     blob = f"{loc_text} {title}"
     remote = bool(raw.get("remote")) or bool(REMOTE_RE.search(blob))
     place = geo.locate(loc_text, hint)
+    locations = geo.locate_all(loc_text, hint)
     if place is None and hint is None:
         # Some boards put the city only in the title ("Engineer (Berlin)")
         place = geo.locate(title)
+        locations = geo.locate_all(title)
 
     in_europe = place is not None and place["country"] in geo.EUROPE
     if not in_europe:
@@ -196,6 +198,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         "location": loc_text or ("Remote" if remote else ""),
         "city": place["city"] if place else None,
         "country": place["country"] if place else None,
+        "locations": locations,
         "lat": place["lat"] if place else None,
         "lon": place["lon"] if place else None,
         "remote": remote,
