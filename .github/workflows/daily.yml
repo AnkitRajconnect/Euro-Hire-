@@ -59,11 +59,11 @@ jobs:
 
       - name: Discover and verify French company websites from open business-place data
         env:
-          GULLYHIRE_CONTACT: https://github.com/${{ github.repository }}
+          EUROHIRE_CONTACT: https://github.com/${{ github.repository }}
         run: >-
           python -m crawler.france_website_discovery
           --db data/company_registry.sqlite3
-          --verify-limit 2000
+          --verify-limit 5000
           --report site/data/france-website-discovery-report.json
           --websites-output site/data/france-company-websites.json
 
