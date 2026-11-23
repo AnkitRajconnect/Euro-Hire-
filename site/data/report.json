@@ -1,46 +1,25 @@
 {
- "generated_at": "2026-11-23T19:04:10+00:00",
- "feeds_ok": 3,
- "feeds_total": 6,
- "jobs_published": 9,
- "jobs_rejected": 4,
- "jobs_held_for_review": 36,
+ "generated_at": "2026-11-23T19:54:36+00:00",
+ "feeds_ok": 7,
+ "feeds_total": 7,
+ "jobs_published": 147,
+ "jobs_rejected": 971,
+ "jobs_held_for_review": 17,
  "companies": [
   {
-   "company": "REGOURD AVIATION",
-   "slug": "fr-309446276",
-   "ats": "recruitee",
-   "ok": false,
-   "raw": 0,
-   "kept": 0,
-   "rejected": 0,
-   "review": 0,
-   "reasons": {},
-   "error": "403 from https://careers-analytics.recruitee.com/api/offers/"
-  },
-  {
-   "company": "TEREGA",
-   "slug": "fr-095580841",
-   "ats": "workday",
-   "ok": false,
-   "raw": 0,
-   "kept": 0,
-   "rejected": 0,
-   "review": 0,
-   "reasons": {},
-   "error": "robots.txt disallows Workday job feed: https://terega.wd3.myworkdayjobs.com/wday/cxs/terega/Sitecarriereterega/jobs"
-  },
-  {
-   "company": "VANTIVA",
-   "slug": "fr-333773174",
-   "ats": "workday",
-   "ok": false,
-   "raw": 0,
-   "kept": 0,
-   "rejected": 0,
-   "review": 0,
-   "reasons": {},
-   "error": "robots.txt disallows Workday job feed: https://vantiva.wd103.myworkdayjobs.com/wday/cxs/vantiva/vantiva/jobs"
+   "company": "ElevenLabs",
+   "slug": "elevenlabs",
+   "ats": "ashby",
+   "ok": true,
+   "raw": 123,
+   "kept": 75,
+   "rejected": 45,
+   "review": 3,
+   "reasons": {
+    "outside Europe or missing/invalid location": 45,
+    "vacancy contains a recruitment-risk signal": 3
+   },
+   "error": null
   },
   {
    "company": "Hugging Face",
@@ -48,40 +27,84 @@
    "ats": "workable",
    "ok": true,
    "raw": 10,
-   "kept": 5,
-   "rejected": 4,
-   "review": 1,
+   "kept": 3,
+   "rejected": 3,
+   "review": 4,
    "reasons": {
-    "outside Europe or occupation not in launch taxonomy": 4,
-    "occupation is not in the approved professional-role taxonomy": 1
+    "outside Europe or missing/invalid location": 3,
+    "vacancy contains a recruitment-risk signal": 4
    },
    "error": null
   },
   {
-   "company": "STIF FRANCE",
-   "slug": "fr-328876503",
-   "ats": "teamtailor",
+   "company": "Linear",
+   "slug": "linear",
+   "ats": "ashby",
    "ok": true,
-   "raw": 3,
+   "raw": 31,
+   "kept": 9,
+   "rejected": 22,
+   "review": 0,
+   "reasons": {
+    "outside Europe or missing/invalid location": 22
+   },
+   "error": null
+  },
+  {
+   "company": "Spotify",
+   "slug": "spotify",
+   "ats": "lever",
+   "ok": true,
+   "raw": 89,
+   "kept": 44,
+   "rejected": 45,
+   "review": 0,
+   "reasons": {
+    "outside Europe or missing/invalid location": 45
+   },
+   "error": null
+  },
+  {
+   "company": "Stripe",
+   "slug": "stripe",
+   "ats": "greenhouse",
+   "ok": true,
+   "raw": 775,
    "kept": 0,
-   "rejected": 0,
+   "rejected": 775,
+   "review": 0,
+   "reasons": {
+    "vacancy URL is outside the approved employer board": 775
+   },
+   "error": null
+  },
+  {
+   "company": "Supabase",
+   "slug": "supabase",
+   "ats": "ashby",
+   "ok": true,
+   "raw": 81,
+   "kept": 1,
+   "rejected": 73,
+   "review": 7,
+   "reasons": {
+    "outside Europe or missing/invalid location": 73,
+    "vacancy contains a recruitment-risk signal": 7
+   },
+   "error": null
+  },
+  {
+   "company": "Synthesia",
+   "slug": "synthesia",
+   "ats": "ashby",
+   "ok": true,
+   "raw": 26,
+   "kept": 15,
+   "rejected": 8,
    "review": 3,
    "reasons": {
-    "occupation is not in the approved professional-role taxonomy": 3
-   },
-   "error": null
-  },
-  {
-   "company": "TANG FRERES",
-   "slug": "fr-306243833",
-   "ats": "teamtailor",
-   "ok": true,
-   "raw": 36,
-   "kept": 4,
-   "rejected": 0,
-   "review": 32,
-   "reasons": {
-    "occupation is not in the approved professional-role taxonomy": 32
+    "outside Europe or missing/invalid location": 8,
+    "vacancy contains a recruitment-risk signal": 3
    },
    "error": null
   }
