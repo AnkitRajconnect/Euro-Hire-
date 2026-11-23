@@ -30,7 +30,7 @@ MAX_STALE_DAYS = 3  # keep jobs of a failing company this long before dropping t
 
 def load_companies(path: Path, only: set[str] | None = None, registry_db: Path | None = DEFAULT_DB,
                    approved_file: Path = Path("companies-approved.json"),
-                   curated_config: bool = False) -> list[dict]:
+                   curated_config: bool = False, country: str | None = None) -> list[dict]:
     """Load approved sources from SQLite, an approval snapshot, or the curated launch list."""
     if curated_config:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -70,6 +70,11 @@ def load_companies(path: Path, only: set[str] | None = None, registry_db: Path |
     else:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         candidates = data.get("companies", [])
+
+    # Country scope is applied before validation and deduplication so the live
+    # France pipeline cannot accidentally publish foreign-headquartered seeds.
+    if country:
+        candidates = [c for c in candidates if str(c.get("hq") or "").upper() == country.upper()]
 
     out, seen = [], set()
     for c in candidates:
@@ -165,7 +170,8 @@ def main(argv=None) -> int:
     ap.add_argument("--companies", default="companies.yaml")
     ap.add_argument("--registry-db", default=str(DEFAULT_DB), help="Local SQLite registry database; if absent, use --approved-companies snapshot")
     ap.add_argument("--approved-companies", default="companies-approved.json", help="Small JSON snapshot of registry-approved sources")
-    ap.add_argument("--curated-config", action="store_true", help="Use the included first-party public ATS source list; no registry database or API key needed")
+    ap.add_argument("--curated-config", action="store_true", help="Include reviewed compatibility seeds alongside registry-approved sources")
+    ap.add_argument("--country", default="FR", help="Only crawl employers headquartered in this ISO-2 country (default: FR)")
     ap.add_argument("--review-out", default="data/review_queue.json", help="Write held vacancies here (keep this file out of the public site)")
     ap.add_argument("--out", default="site/data")
     ap.add_argument("--workers", type=int, default=8)
@@ -178,7 +184,7 @@ def main(argv=None) -> int:
     only = {s.strip().lower() for s in args.only.split(",") if s.strip()} or None
     registry_db = Path(args.registry_db) if args.registry_db else None
     all_approved_companies = load_companies(Path(args.companies), None, registry_db, Path(args.approved_companies),
-                                              curated_config=args.curated_config)
+                                              curated_config=args.curated_config, country=args.country)
     if not all_approved_companies:
         print("No approved employer career sources are ready to crawl. Check companies.yaml and its evidence.", file=sys.stderr)
         return 2
