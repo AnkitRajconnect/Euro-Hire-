@@ -246,7 +246,8 @@ def test_registry_store_requires_explicit_domain_and_source_approval(tmp_path):
     db = tmp_path / "registry.sqlite3"
     con = connect(db)
     upsert_candidate(con, country="FR", registry_id="123456789", legal_name="Example SAS",
-                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True)
+                     registry_status="active", registry_source="INSEE SIRENE", legal_person=True,
+                     raw={"employer_scope": "employer", "employee_range": "11"})
     assert approved_companies(db) == []
     set_domain(con, "FR", "123456789", "https://example.fr", confirmed=True)
     # A career source must first exist as a discovered record; no blind slug approval.
