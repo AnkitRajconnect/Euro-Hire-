@@ -184,7 +184,10 @@
 
   function jobMatchesPlace(job, query) {
     if (!query) return true;
-    const locationText = [job.city, job.location, job.country, job.country ? countryName(job.country) : ""]
+    const listedLocations = Array.isArray(job.locations) ? job.locations.flatMap((place) => [
+      place.city, place.country, place.country ? countryName(place.country) : ""
+    ]) : [];
+    const locationText = [job.city, job.location, job.country, job.country ? countryName(job.country) : "", ...listedLocations]
       .filter(Boolean).join(" ").toLowerCase();
     return locationText.includes(query);
   }
@@ -203,7 +206,7 @@
         (!filters.remote || Boolean(job.remote)) &&
         (!filters.salary || Boolean(job.salary)) &&
         (!filters.fresh || new Date(job.first_seen || job.posted) >= freshCutoff) &&
-        (!cityFilter || job.city === cityFilter) &&
+        (!cityFilter || job.city === cityFilter || (Array.isArray(job.locations) && job.locations.some((place) => place.city === cityFilter))) &&
         (!onlySaved || savedJobIds.has(job.id));
     });
 
