@@ -149,7 +149,7 @@ def extract_board_token(provider: str, url: str) -> str | None:
             if valid_slug(slug):
                 return slug.lower()
         if mode == "workday" and host.endswith("." + domain):
-            match = re.fullmatch(r"([a-z0-9-]+)\\.(wd[0-9]+)\\.myworkdayjobs\\.com", host)
+            match = re.fullmatch(r"([a-z0-9-]+)\.(wd[0-9]+)\.myworkdayjobs\.com", host)
             if not match:
                 continue
             parts = [part for part in parsed.path.split("/") if part]
@@ -286,7 +286,7 @@ def job_is_in_france(provider: str, job: dict[str, Any]) -> bool:
     return is_france_location(job_location_text(provider, job), country_hint)
 
 
-def _job_rows(provider: str, payload: Any) -> list[dict[str, Any]]:
+def _job_rows(provider: str, payload: Any, slug: str | None = None) -> list[dict[str, Any]]:
     if provider == "lever":
         return payload if isinstance(payload, list) else []
     if provider == "breezy":
@@ -328,7 +328,7 @@ def _job_rows(provider: str, payload: Any) -> list[dict[str, Any]]:
             return []
         rows = []
         try:
-            tenant, region, site, locale = slug.split("|", 3)
+            tenant, region, site, locale = (slug or "").split("|", 3)
         except ValueError:
             return []
         host = f"{tenant}.{region}.myworkdayjobs.com"
@@ -570,7 +570,7 @@ async def _fetch_workday_jobs(
                 total = int(data.get("total", len(data["jobPostings"])))
             except (TypeError, ValueError):
                 total = len(data["jobPostings"])
-        out.extend(_job_rows("workday", data))
+        out.extend(_job_rows("workday", data, slug))
         if len(data["jobPostings"]) < page_size:
             break
         offset += len(data["jobPostings"])
@@ -592,8 +592,9 @@ def board_url(provider: str, slug: str) -> str:
         "pinpoint": f"https://{slug}.pinpointhq.com/",
         "bamboohr": f"https://{slug}.bamboohr.com/careers/list",
         "rippling": f"https://ats.rippling.com/{slug}/jobs",
-        "workday": _workday_board_url(slug),
     }
+    if provider == "workday":
+        return _workday_board_url(slug)
     if provider not in urls:
         raise ValueError(f"Unsupported provider: {provider}")
     return urls[provider]
@@ -667,25 +668,30 @@ async def fetch_board_jobs(
     if provider == "recruitee" and date.today() >= RECRUITEE_TOKEN_DATE:
         return False, [], "disabled: Recruitee requires a Careers API token from 2027-02-10"
     if provider == "workday":
-        return await _fetch_workday_jobs(slug, client, limiter, float(PROVIDERS[provider]["interval"]))
-    try:
-        url, params = board_request(provider, slug)
-    except ValueError as exc:
-        return False, [], str(exc)
-    headers = {"Accept": "application/json, application/rss+xml, application/xml"}
-    interval = float(PROVIDERS[provider]["interval"])
-    response, error = await request_with_retries(
-        client, url, limiter=limiter, interval=interval, params=params, headers=headers
-    )
-    if response is None or error:
-        return False, [], error or "no response"
-    try:
-        payload = response.content if provider == "teamtailor" else response.json()
-    except ValueError as exc:
-        return False, [], f"invalid public feed: {exc}"
-    if not payload_shape_valid(provider, payload):
-        return False, [], "unexpected public feed response shape"
-    rows = _job_rows(provider, payload)
+        success, rows, error = await _fetch_workday_jobs(
+            slug, client, limiter, float(PROVIDERS[provider]["interval"])
+        )
+        if not success:
+            return False, [], error
+    else:
+        try:
+            url, params = board_request(provider, slug)
+        except ValueError as exc:
+            return False, [], str(exc)
+        headers = {"Accept": "application/json, application/rss+xml, application/xml"}
+        interval = float(PROVIDERS[provider]["interval"])
+        response, error = await request_with_retries(
+            client, url, limiter=limiter, interval=interval, params=params, headers=headers
+        )
+        if response is None or error:
+            return False, [], error or "no response"
+        try:
+            payload = response.content if provider == "teamtailor" else response.json()
+        except ValueError as exc:
+            return False, [], f"invalid public feed: {exc}"
+        if not payload_shape_valid(provider, payload):
+            return False, [], "unexpected public feed response shape"
+        rows = _job_rows(provider, payload, slug)
     if provider == "rippling" and isinstance(payload, dict):
         try:
             total_pages = min(int(payload.get("totalPages", 1)), 10)
@@ -704,7 +710,7 @@ async def fetch_board_jobs(
                 return False, [], "invalid Rippling page response"
             if not payload_shape_valid(provider, page_payload):
                 return False, [], "unexpected Rippling page response shape"
-            rows.extend(_job_rows(provider, page_payload))
+            rows.extend(_job_rows(provider, page_payload, slug))
 
     france_jobs = []
     for row in rows:

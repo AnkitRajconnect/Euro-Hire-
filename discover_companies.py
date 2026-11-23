@@ -338,7 +338,7 @@ async def run_discovery(db_path, report_path, max_crawls=2, seed_only=False, max
 
         registry_limiter = HostRateLimiter()
         for provider, slug, jobs in found:
-            display_name = next((job.get("company_name") for job in jobs if job.get("company_name")), "") or slug_to_name(slug)
+            display_name = next((job.get("company_name") for job in jobs if job.get("company_name")), "") or slug_to_name(slug.split("|", 1)[0] if provider == "workday" else slug)
             registry, match_status = await registry_lookup(client, registry_limiter, display_name)
             report["registry_matches"] += int(match_status == "exact")
             report["registry_api_errors"] += int(match_status == "api_error")

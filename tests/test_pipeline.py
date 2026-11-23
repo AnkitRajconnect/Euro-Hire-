@@ -181,7 +181,7 @@ def test_workday_board_urls_are_safe_and_well_formed():
 
 
 def test_workday_job_postings_are_flattened_for_france_filtering():
-    from job_pipeline import _job_rows
+    from job_pipeline import _job_rows, job_is_in_france
     payload = {"jobPostings": [{
         "title": "Account Executive",
         "externalPath": "/job/Paris/123",
