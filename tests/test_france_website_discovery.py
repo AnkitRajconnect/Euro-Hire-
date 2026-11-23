@@ -276,6 +276,18 @@ def test_new_registry_name_match_requeues_previously_mismatched_candidate(tmp_pa
     con.close()
 
 
+def test_duckdb_lambda_syntax_used_by_overture_query_is_supported():
+    import duckdb
+
+    rows = duckdb.sql(
+        "SELECT list_filter("
+        "[struct_pack(country := 'FR'), struct_pack(country := 'BE')], "
+        "lambda a : a.country = 'FR')"
+    ).fetchone()[0]
+    assert len(rows) == 1
+    assert rows[0]["country"] == "FR"
+
+
 def test_overture_name_variants_keep_french_common_and_alternate_names():
     names = {
         "primary": "Example Group",
