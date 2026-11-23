@@ -9,7 +9,7 @@ from urllib import robotparser
 
 import requests
 
-CONTACT = os.environ.get("GULLYHIRE_CONTACT") or os.environ.get("EUROHIRE_CONTACT", "set-GULLYHIRE_CONTACT-env-var")
+CONTACT = os.environ.get("EUROHIRE_CONTACT") or os.environ.get("GULLYHIRE_CONTACT", "set-EUROHIRE_CONTACT-env-var")
 USER_AGENT = f"EuroHireBot/0.3 (+France employer website discovery; contact: {CONTACT})"
 
 
