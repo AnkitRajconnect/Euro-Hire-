@@ -126,7 +126,8 @@ def test_successful_board_refresh_upserts_and_expires_missing_jobs(tmp_path):
     store_board_result(conn, board, [
         _job("job-1", "Sales Manager", "https://boards.greenhouse.io/exampleco/jobs/1"),
         _job("job-2", "Data Analyst", "https://boards.greenhouse.io/exampleco/jobs/2"),
-        _job("job-us", "US Sales", "https://boards.greenhouse.io/exampleco/jobs/3", "New York, USA"),
+        {**_job("job-us", "US Sales", "https://boards.greenhouse.io/exampleco/jobs/3", "New York, USA"),
+         "country_code": "US"},
     ], "2026-11-23T06:00:00+00:00")
     conn.commit()
     assert conn.execute("SELECT COUNT(*) FROM jobs WHERE is_active=1").fetchone()[0] == 2
