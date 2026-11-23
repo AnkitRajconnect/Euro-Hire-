@@ -494,7 +494,8 @@ def test_failed_career_site_attempt_does_not_block_next_company_batch(tmp_path):
         ("222222222", "B Careers", "https://b-careers.example"),
     ]:
         upsert_candidate(con, country="FR", registry_id=registry_id, legal_name=name,
-                         registry_status="active", registry_source="INSEE SIRENE", legal_person=True)
+                         registry_status="active", registry_source="INSEE SIRENE", legal_person=True,
+                         raw={"employer_scope": "employer", "employee_range": "11"})
         set_domain(con, "FR", registry_id, domain, confirmed=True)
     http = FakeHttp({
         "https://b-careers.example": '<html><a href="https://b-careers.example/careers">Careers</a></html>',
