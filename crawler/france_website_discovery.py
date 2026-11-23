@@ -173,29 +173,33 @@ def _canonical_host(value: str) -> str | None:
 def _company_name_index(con) -> dict[str, dict[str, str]]:
     """Build an exact-name index from active French legal entities."""
     index: dict[str, dict[str, str]] = {}
-    rows = con.execute(
-        """SELECT id,registry_id,legal_name,trading_name,raw_json
+    cursor = con.execute(
+        """SELECT registry_id,legal_name,trading_name,raw_json
            FROM companies
            WHERE country='FR' AND registry_status='active' AND legal_person=1
              AND json_extract(raw_json, '$.employer_scope')='employer'"""
-    ).fetchall()
-    for row in rows:
-        names = [(row["legal_name"], "exact_legal_name"),
-                 (row["trading_name"], "exact_trading_name")]
-        try:
-            raw = json.loads(row["raw_json"] or "{}")
-        except (TypeError, ValueError):
-            raw = {}
-        aliases = raw.get("trading_names") or raw.get("name_aliases") or []
-        if isinstance(aliases, str):
-            aliases = [aliases]
-        names.extend((alias, "exact_trading_name") for alias in aliases if isinstance(alias, str))
-        for candidate_name, method in names:
-            if not candidate_name:
-                continue
-            for key in name_keys(candidate_name):
-                bucket = index.setdefault(key, {})
-                bucket.setdefault(str(row["registry_id"]), method)
+    )
+    while True:
+        rows = cursor.fetchmany(50000)
+        if not rows:
+            break
+        for row in rows:
+            names = [(row["legal_name"], "exact_legal_name"),
+                     (row["trading_name"], "exact_trading_name")]
+            try:
+                raw = json.loads(row["raw_json"] or "{}")
+            except (TypeError, ValueError):
+                raw = {}
+            aliases = raw.get("trading_names") or raw.get("name_aliases") or []
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            names.extend((alias, "exact_trading_name") for alias in aliases if isinstance(alias, str))
+            for candidate_name, method in names:
+                if not candidate_name:
+                    continue
+                for key in name_keys(candidate_name):
+                    bucket = index.setdefault(key, {})
+                    bucket.setdefault(str(row["registry_id"]), method)
     # Official SIRENE establishment stock adds branch/shop trading names
     # (enseigne and denomination usuelle) mapped back to their legal SIREN.
     try:
@@ -303,6 +307,7 @@ def ingest_overture_release(con, release: str) -> dict:
         ddb.execute("INSTALL httpfs")
         ddb.execute("LOAD httpfs")
         ddb.execute("SET s3_region='us-west-2'")
+        ddb.execute("SET memory_limit='2GB'")
         source = OVERTURE_S3.format(release=release)
         query = f"""
             SELECT id, names.primary AS place_name, brand.names.primary AS brand_name, websites,
