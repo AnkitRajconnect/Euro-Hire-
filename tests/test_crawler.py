@@ -235,9 +235,11 @@ def test_manual_trade_and_payment_scam_are_blocked():
     assert screen_vacancy(raw, company)[0] == "review"
 
 
-def test_unknown_occupation_is_not_published():
+def test_unclassified_professional_role_is_retained_for_the_other_filter():
     raw = {"id": "1", "title": "Mystery Role", "url": "https://x.test/1", "location": "Paris"}
-    assert normalize(raw, co(), NOW) is None
+    job = normalize(raw, co(), NOW)
+    assert job is not None
+    assert job["role"] == "other"
 
 
 def test_registry_store_requires_explicit_domain_and_source_approval(tmp_path):
@@ -460,7 +462,8 @@ def test_discover_all_batch_progresses_past_companies_without_career_pages(tmp_p
         ("222222222", "B Has Careers", "https://b-careers.example"),
     ]:
         upsert_candidate(con, country="FR", registry_id=registry_id, legal_name=name,
-                         registry_status="active", registry_source="INSEE SIRENE", legal_person=True)
+                         registry_status="active", registry_source="INSEE SIRENE", legal_person=True,
+                         raw={"employer_scope": "employer", "employee_range": "11"})
         set_domain(con, "FR", registry_id, domain, confirmed=True)
     routes = {
         "https://a-nocareers.example": "<html><body>Company information only</body></html>",
