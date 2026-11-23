@@ -127,8 +127,17 @@ def upsert_candidate(con: sqlite3.Connection, *, country: str, registry_id: str,
     if official_domain:
         parsed_domain = urlparse(official_domain if "://" in official_domain else f"https://{official_domain}")
         official_domain = (parsed_domain.hostname or "").lower() or None
-    existing = con.execute("SELECT id, official_domain, legal_name FROM companies WHERE country=? AND registry_id=?",
+    existing = con.execute("SELECT id, official_domain, legal_name, raw_json FROM companies WHERE country=? AND registry_id=?",
                             (country.upper(), str(registry_id))).fetchone()
+    # Keep enrichment gathered by other official sources (e.g. SIRENE employee
+    # bands) when a later targeted lookup refreshes the legal identity record.
+    merged_raw = {}
+    if existing and existing["raw_json"]:
+        try:
+            merged_raw = json.loads(existing["raw_json"])
+        except (TypeError, ValueError):
+            merged_raw = {}
+    merged_raw.update(raw or {})
     domain_changed = bool(existing and official_domain and existing["official_domain"] and
                           official_domain != existing["official_domain"])
     def name_key(value: str) -> str:
@@ -164,7 +173,7 @@ def upsert_candidate(con: sqlite3.Connection, *, country: str, registry_id: str,
        updated_at=excluded.updated_at, raw_json=excluded.raw_json""",
        (country.upper(), str(registry_id), legal_name, trading_name, legal_form, int(legal_person),
         registry_status.lower(), registry_source, checked_at, official_domain, int(domain_verified), domain_method,
-        stamp if domain_verified else None, stamp, stamp, json.dumps(raw or {}, ensure_ascii=False)))
+        stamp if domain_verified else None, stamp, stamp, json.dumps(merged_raw, ensure_ascii=False)))
     if commit:
         con.commit()
 
@@ -477,6 +486,7 @@ def _insee_companies(query: str, limit: int, http: Http) -> list[dict]:
             if (not siren or not name or status_code not in {"A", "C"}
                     or not legal_form.startswith(tuple("3456")) or diffusion in {"P", "N"}):
                 continue
+            employee_range = str(ul.get("trancheEffectifsUniteLegale") or "").strip().upper()
             results.append({"country": "FR", "registry_id": str(siren), "legal_name": name,
                             "legal_form": legal_form, "legal_person": True,
                             "registry_status": "active" if status_code == "A" else "inactive",
@@ -484,6 +494,9 @@ def _insee_companies(query: str, limit: int, http: Http) -> list[dict]:
                                 "legal_form_code": legal_form,
                                 "principal_activity_code": ul.get("activitePrincipaleUniteLegale"),
                                 "creation_date": ul.get("dateCreationUniteLegale"),
+                                "employee_range": employee_range or None,
+                                "employee_range_date": ul.get("anneeEffectifsUniteLegale"),
+                                "employer_scope": _classify_fr_employer_range(employee_range),
                             }})
         offset += len(records)
         if len(records) < params["nombre"] or offset >= int((payload.get("header") or {}).get("total", offset)):
