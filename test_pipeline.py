@@ -170,7 +170,7 @@ def test_wttj_jobs_are_grouped_by_employer_without_a_fake_board(tmp_path):
             "company_key": f"wttj:{slug}", "company_ats_type": "wttj",
             "company_ats_slug": slug, "company_name": name,
             "title": "Product Manager", "apply_url": f"https://jobs.example/{job_id}",
-            "location": "Paris, France", "country_code": "FR", "posted_at": "2026-11-20",
+            "location": "Paris, France", "country_code": "FR", "posted_at": "2026-11-20", "posted_at": "2026-11-20",
         })
     kept = store_board_result(
         conn, {"ats_type": "wttj", "ats_slug": "france-index"},
