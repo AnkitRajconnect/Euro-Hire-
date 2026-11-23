@@ -169,6 +169,30 @@ for cc, (name, lat, lon, aliases) in COUNTRIES.items():
         _COUNTRY_INDEX.append((_word_re(term), cc))
 
 
+def locate_all(text: str | None, country_hint: str | None = None):
+    """Return every distinct European city explicitly named in a location string.
+
+    This handles ATS locations such as "Paris, London or Berlin" without
+    pretending the vacancy is only in the first city. Country-only locations
+    remain represented as a country centroid.
+    """
+    if not text and not country_hint:
+        return []
+    t = _norm(text or "")
+    found = []
+    seen = set()
+    for rx, name, cc, lat, lon in _CITY_INDEX:
+        if country_hint and country_hint != cc:
+            continue
+        if rx.search(t) and (name, cc) not in seen:
+            found.append({"city": name, "country": cc, "lat": lat, "lon": lon})
+            seen.add((name, cc))
+    if found:
+        return found
+    place = locate(text, country_hint)
+    return [place] if place else []
+
+
 def locate(text: str | None, country_hint: str | None = None):
     """Return dict(city, country, lat, lon) or None. country_hint is an ISO code."""
     if not text and not country_hint:
