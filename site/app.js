@@ -111,9 +111,53 @@
     return new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" }).format(parsed);
   }
 
-  function hasCoordinates(job) {
-    return job?.lat !== null && job?.lat !== undefined && job?.lon !== null && job?.lon !== undefined &&
-      Number.isFinite(Number(job.lat)) && Number.isFinite(Number(job.lon));
+  function hasCoordinates(place) {
+    return place?.lat !== null && place?.lat !== undefined && place?.lon !== null && place?.lon !== undefined &&
+      Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon));
+  }
+
+  function mapLocationsForJob(job) {
+    const source = Array.isArray(job.locations) ? job.locations.filter(hasCoordinates) : [];
+    const places = source.length ? source : (hasCoordinates(job) ? [job] : []);
+    const named = places.filter((place) => typeof place.city === "string" && place.city.trim());
+    const unique = new Map();
+
+    if (named.length) {
+      named.forEach((place) => {
+        const label = place.city.trim();
+        unique.set(`city:${label.toLowerCase()}`, {
+          key: `city:${label.toLowerCase()}`,
+          label,
+          lat: Number(place.lat),
+          lon: Number(place.lon),
+          approximate: false,
+        });
+      });
+      return [...unique.values()];
+    }
+
+    if (!places.length) return [];
+    const place = places[0];
+    const country = String(place.country || job.country || "").toUpperCase();
+    const label = country ? countryName(country) : "Unknown area";
+
+    if (job.remote) {
+      return [{
+        key: `remote:${country || "unknown"}`,
+        label: `Remote · ${label}`,
+        lat: Number(place.lat),
+        lon: Number(place.lon),
+        approximate: true,
+      }];
+    }
+
+    return [{
+      key: `area:${country || "unknown"}`,
+      label: `Approximate · ${label}`,
+      lat: Number(place.lat),
+      lon: Number(place.lon),
+      approximate: true,
+    }];
   }
 
   function money(salary) {
@@ -206,7 +250,7 @@
         (!filters.remote || Boolean(job.remote)) &&
         (!filters.salary || Boolean(job.salary)) &&
         (!filters.fresh || new Date(job.first_seen || job.posted) >= freshCutoff) &&
-        (!cityFilter || job.city === cityFilter || (Array.isArray(job.locations) && job.locations.some((place) => place.city === cityFilter))) &&
+        (!cityFilter || mapLocationsForJob(job).some((place) => place.key === cityFilter)) &&
         (!onlySaved || savedJobIds.has(job.id));
     });
 
@@ -328,16 +372,23 @@
     cityFilterBox.hidden = !cityFilter;
     cityFilterBox.replaceChildren();
     if (cityFilter) {
-      const clearCity = element("button", { type: "button", text: `Showing ${cityFilter} ×` });
+      const selectedPlace = jobs.flatMap(mapLocationsForJob).find((place) => place.key === cityFilter);
+      const clearCity = element("button", {
+        type: "button",
+        text: `Showing ${selectedPlace?.label || cityFilter} ×`,
+      });
       clearCity.addEventListener("click", () => { cityFilter = null; selectedJobId = null; applyFilters(); });
       cityFilterBox.append(clearCity);
     }
   }
 
-  function mapPopup(city, count) {
+  function mapPopup(label, count, approximate) {
     const content = element("div", {},
-      element("p", { class: "map-popup-title", text: city }),
-      element("p", { class: "map-popup-copy", text: `${count} ${count === 1 ? "role" : "roles"} · Select marker to filter` }));
+      element("p", { class: "map-popup-title", text: label }),
+      element("p", {
+        class: "map-popup-copy",
+        text: `${count} ${count === 1 ? "role" : "roles"} · ${approximate ? "approximate area" : "city-level location"} · Select marker to filter`,
+      }));
     return content;
   }
 
@@ -345,19 +396,30 @@
     if (!map || !markerLayer) return;
     markerLayer.clearLayers();
     markersByCity = new Map();
-    const byCity = new Map();
+    const byPlace = new Map();
 
     for (const job of filteredJobs) {
-      if (!hasCoordinates(job) || !job.city) continue;
-      const lat = Number(job.lat);
-      const lon = Number(job.lon);
-      const current = byCity.get(job.city) || { count: 0, lat, lon };
-      current.count += 1;
-      byCity.set(job.city, current);
+      for (const place of mapLocationsForJob(job)) {
+        const current = byPlace.get(place.key) || {
+          count: 0,
+          jobs: new Set(),
+          label: place.label,
+          lat: place.lat,
+          lon: place.lon,
+          approximate: place.approximate,
+        };
+        if (!current.jobs.has(job.id)) {
+          current.jobs.add(job.id);
+          current.count += 1;
+        }
+        byPlace.set(place.key, current);
+      }
     }
 
-    for (const [city, info] of byCity) {
-      const selected = cityFilter === city || filteredJobs.some((job) => job.id === selectedJobId && job.city === city);
+    for (const [key, info] of byPlace) {
+      const selected = cityFilter === key ||
+        filteredJobs.some((job) => job.id === selectedJobId &&
+          mapLocationsForJob(job).some((place) => place.key === key));
       const size = Math.round(32 + Math.min(18, Math.sqrt(info.count) * 4));
       const markerIcon = L.divIcon({
         className: "pin-wrap",
@@ -366,28 +428,34 @@
         popupAnchor: [0, -size / 2],
         html: `<div class="map-pin${selected ? " is-selected" : ""}" style="--pin-size:${size}px"><span>${info.count}</span></div>`,
       });
-      const marker = L.marker([info.lat, info.lon], { icon: markerIcon, title: `${city}: ${info.count} jobs`, alt: `${city}: ${info.count} jobs` });
-      marker.bindPopup(mapPopup(city, info.count));
+      const marker = L.marker([info.lat, info.lon], {
+        icon: markerIcon,
+        title: `${info.label}: ${info.count} jobs`,
+        alt: `${info.label}: ${info.count} jobs`,
+      });
+      marker.bindPopup(mapPopup(info.label, info.count, info.approximate));
       marker.on("click", () => {
-        cityFilter = city;
+        cityFilter = key;
         selectedJobId = null;
         applyFilters();
         if (window.matchMedia("(max-width: 860px)").matches) setMobileView("list");
       });
       marker.addTo(markerLayer);
-      markersByCity.set(city, marker);
+      markersByCity.set(key, marker);
     }
   }
 
   function locateJob(job) {
-    if (!map || !hasCoordinates(job)) return;
+    const places = mapLocationsForJob(job);
+    if (!map || !places.length) return;
     selectedJobId = job.id;
     renderResults();
     setMobileView("map");
+    const place = places[0];
     window.requestAnimationFrame(() => {
       map.invalidateSize();
-      map.flyTo([Number(job.lat), Number(job.lon)], Math.max(map.getZoom(), 8), { duration: 0.45 });
-      const marker = markersByCity.get(job.city);
+      map.flyTo([place.lat, place.lon], Math.max(map.getZoom(), 8), { duration: 0.45 });
+      const marker = markersByCity.get(place.key);
       if (marker) window.setTimeout(() => marker.openPopup(), 480);
     });
   }
@@ -482,8 +550,11 @@
 
   function fitAllLocations() {
     if (!map || map.getSize().x === 0 || map.getSize().y === 0) return;
-    const coords = jobs.filter(hasCoordinates)
-      .map((job) => [Number(job.lat), Number(job.lon)]);
+    const uniqueCoordinates = new Map();
+    jobs.flatMap(mapLocationsForJob).forEach((place) => {
+      uniqueCoordinates.set(place.key, [place.lat, place.lon]);
+    });
+    const coords = [...uniqueCoordinates.values()];
     if (!coords.length) {
       map.setView([50.85, 4.35], 5);
     } else if (coords.length === 1) {
