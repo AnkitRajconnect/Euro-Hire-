@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Daily France ATS job sync.
+"""Daily Europe ATS job sync.
 
-Reads only previously discovered boards that have produced French vacancies.
+Reads only previously discovered boards that have produced European vacancies.
 A successful complete board response expires missing jobs; failed feeds do not.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ats_pipeline import (
     DB_DEFAULT, PoliteHTTP, enrich_company_insee, fetch_ats_board,
-    fetch_wttj_france_jobs, init_db, mark_board_error, store_board_result,
+    fetch_wttj_europe_jobs, init_db, mark_board_error, store_board_result,
     utc_now, write_exports,
 )
 
@@ -38,18 +38,18 @@ async def sync_board(http, conn, row, semaphores, run_started):
 
 
 async def sync_wttj(http, conn, run_started):
-    raw_jobs, error = await fetch_wttj_france_jobs(http)
+    raw_jobs, error = await fetch_wttj_europe_jobs(http)
     if error:
         conn.execute("""
           INSERT INTO source_runs(source_key,last_checked_at,last_error)
-          VALUES('wttj-france',?,?)
+          VALUES('wttj-europe',?,?)
           ON CONFLICT(source_key) DO UPDATE SET
             last_checked_at=excluded.last_checked_at,last_error=excluded.last_error
         """, (run_started, error[:500]))
         conn.commit()
         return {"ok": False, "error": error, "fr_jobs": 0}
     kept = store_board_result(
-        conn, {"ats_type": "wttj", "ats_slug": "france-index"},
+        conn, {"ats_type": "wttj", "ats_slug": "europe-index"},
         raw_jobs, run_started, deactivate=False, update_board=False,
     )
     conn.execute("""
@@ -58,7 +58,7 @@ async def sync_wttj(http, conn, run_started):
     """, (run_started,))
     conn.execute("""
       INSERT INTO source_runs(source_key,last_checked_at,last_success_at,last_error)
-      VALUES('wttj-france',?,?,NULL)
+      VALUES('wttj-europe',?,?,NULL)
       ON CONFLICT(source_key) DO UPDATE SET
         last_checked_at=excluded.last_checked_at,
         last_success_at=excluded.last_success_at,last_error=NULL
@@ -97,11 +97,11 @@ async def run(args):
         "generated_at": run_started,
         "pipeline": "daily_ats_job_sync",
         "boards_selected": 0, "boards_ok": 0, "boards_failed": 0,
-        "france_jobs_from_ats": 0, "wttj": None, "insee_companies_checked": 0,
+        "europe_jobs_from_ats": 0, "wttj": None, "insee_companies_checked": 0,
     }
     try:
         query = """
-          SELECT * FROM ats_boards WHERE has_fr_jobs=1
+          SELECT * FROM ats_boards WHERE has_europe_jobs=1
           ORDER BY COALESCE(last_probed_at,'0000-00-00'), ats_type, ats_slug
         """
         rows = conn.execute(query).fetchall()
@@ -117,11 +117,11 @@ async def run(args):
         ))
         report["boards_ok"] = sum(item["ok"] for item in results)
         report["boards_failed"] = len(results) - report["boards_ok"]
-        report["france_jobs_from_ats"] = sum(item.get("fr_jobs", 0) for item in results)
+        report["europe_jobs_from_ats"] = sum(item.get("fr_jobs", 0) for item in results)
         report["wttj"] = await sync_wttj(http, conn, run_started)
         report["insee_companies_checked"] = await enrich_pending(http, conn, args.max_insee)
 
-        report["active_france_jobs"] = conn.execute(
+        report["active_europe_jobs"] = conn.execute(
             "SELECT COUNT(*) FROM jobs WHERE is_active=1"
         ).fetchone()[0]
         report["companies_count"] = conn.execute(
@@ -130,8 +130,8 @@ async def run(args):
         report["companies_matched_to_insee"] = conn.execute(
             "SELECT COUNT(*) FROM companies WHERE insee_match_status='matched'"
         ).fetchone()[0]
-        report["boards_with_fr_jobs"] = conn.execute(
-            "SELECT COUNT(*) FROM ats_boards WHERE has_fr_jobs=1"
+        report["boards_with_europe_jobs"] = conn.execute(
+            "SELECT COUNT(*) FROM ats_boards WHERE has_europe_jobs=1"
         ).fetchone()[0]
         report["ats_board_counts"] = {
             row["ats_type"]: row["n"] for row in conn.execute(
@@ -157,7 +157,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--db", type=Path, default=DB_DEFAULT)
     parser.add_argument("--max-boards", type=int, default=0,
-                        help="0 means all discovered French boards")
+                        help="0 means all discovered European boards")
     parser.add_argument("--max-insee", type=int, default=3000)
     parser.add_argument("--timeout", type=float, default=25)
     args = parser.parse_args()
