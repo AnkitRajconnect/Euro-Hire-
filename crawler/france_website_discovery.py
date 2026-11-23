@@ -19,6 +19,7 @@ from urllib.parse import urljoin, urlparse
 
 from .company_registry import DEFAULT_DB, connect, now_iso
 from .http import FetchError, Http
+from .france_establishment_aliases import SCHEMA as ESTABLISHMENT_ALIAS_SCHEMA, sync_establishment_aliases
 
 STAC_CATALOG = "https://stac.overturemaps.org/catalog.json"
 OVERTURE_S3 = "s3://overturemaps-us-west-2/release/{release}/theme=places/type=place/*.parquet"
@@ -189,6 +190,22 @@ def _company_name_index(con) -> dict[str, dict[str, str]]:
             for key in name_keys(candidate_name):
                 bucket = index.setdefault(key, {})
                 bucket.setdefault(str(row["registry_id"]), method)
+    # Official SIRENE establishment stock adds branch/shop trading names
+    # (enseigne and denomination usuelle) mapped back to their legal SIREN.
+    try:
+        alias_cursor = con.execute(
+            "SELECT siren,alias FROM france_company_name_aliases"
+        )
+        while True:
+            alias_rows = alias_cursor.fetchmany(50000)
+            if not alias_rows:
+                break
+            for alias_row in alias_rows:
+                for key in name_keys(alias_row["alias"]):
+                    bucket = index.setdefault(key, {})
+                    bucket.setdefault(str(alias_row["siren"]), "exact_establishment_alias")
+    except Exception as exc:
+        print(f"SIRENE establishment alias index unavailable: {exc}")
     return index
 
 
@@ -632,6 +649,11 @@ def build_report(con, release: str, ingest: dict | None, verification: dict) -> 
         "verified_official_domains_in_company_registry": domains,
         "website_candidate_rows": sum(statuses.values()),
         "candidate_status_counts": statuses,
+        "establishment_alias_rows": con.execute(
+            "SELECT COUNT(*) FROM france_company_name_aliases"
+        ).fetchone()[0] if con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='france_company_name_aliases'"
+        ).fetchone() else 0,
         "latest_ingest": ingest or {"skipped": True, "reason": "Overture release already present in persistent SQLite cache"},
         "verification_batch": verification,
         "verification_rule": "A domain is automatically verified only when its same-company SIREN/SIRET is found in an accessible first-party legal notice. Other cases remain pending or need review.",
@@ -715,12 +737,19 @@ def run(db: Path, *, verify_limit: int = 1000, report_path: Path | None = None,
 
     con = connect(db)
     con.executescript(SCHEMA)
-    previous = con.execute(
-        "SELECT value FROM france_website_discovery_meta WHERE key='overture_release'"
-    ).fetchone()
+    con.executescript(ESTABLISHMENT_ALIAS_SCHEMA)
     ingest = None
+    alias_sync = {}
     try:
-        if force_import or not previous or previous["value"] != release:
+        try:
+            alias_sync = sync_establishment_aliases(con, name_keys)
+        except Exception as exc:
+            alias_sync = {"ok": False, "updated": False, "error": str(exc)[:1000]}
+            print(f"SIRENE establishment alias sync failed; continuing with legal names and available aliases: {exc}")
+        previous = con.execute(
+            "SELECT value FROM france_website_discovery_meta WHERE key='overture_release'"
+        ).fetchone()
+        if force_import or alias_sync.get("updated") or not previous or previous["value"] != release:
             ingest = ingest_overture_release(con, release)
         else:
             print(f"Overture release {release} already imported; skipping full re-scan.")
@@ -731,6 +760,7 @@ def run(db: Path, *, verify_limit: int = 1000, report_path: Path | None = None,
             con, websites_output_path
         ) if websites_output_path else 0
         report = build_report(con, release, ingest, verification)
+        report["establishment_alias_sync"] = alias_sync
         report["verified_websites_exported"] = verified_websites
         if report_path:
             report_path.parent.mkdir(parents=True, exist_ok=True)
