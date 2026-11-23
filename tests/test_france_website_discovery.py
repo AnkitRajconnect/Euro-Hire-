@@ -7,6 +7,7 @@ from crawler.france_website_discovery import (
     SCHEMA,
     _canonical_host,
     extract_legal_sirens,
+    export_verified_websites,
     name_keys,
     verify_pending_candidates,
 )
@@ -165,4 +166,23 @@ def test_stale_legal_notice_proof_is_revoked_when_company_id_changes(tmp_path):
     assert company["official_domain"] == "candidate.fr"
     assert company["domain_verified"] == 0
     assert company["domain_method"] is None
+    con.close()
+
+def test_public_export_contains_only_verified_same_company_websites(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = add_company_and_candidate(db)
+    http = FakeHttp({
+        "https://candidate.fr/": '<a href="/mentions-legales">Mentions légales</a>',
+        "https://candidate.fr/mentions-legales": "<p>SIRET : 123 456 789 00012</p>",
+    })
+    verify_pending_candidates(con, http, limit=10)
+    output = tmp_path / "france-company-websites.json"
+    count = export_verified_websites(con, output)
+    payload = json.loads(output.read_text(encoding="utf-8"))
+
+    assert count == 1
+    assert payload["count"] == 1
+    assert payload["companies"][0]["siren"] == "123456789"
+    assert payload["companies"][0]["official_website"] == "https://candidate.fr/"
+    assert payload["companies"][0]["verification_method"].startswith("Matching SIREN/SIRET")
     con.close()
