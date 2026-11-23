@@ -180,6 +180,34 @@ def test_discover_detects_ats():
     assert ("personio", "bar") in discover.detect(page)
 
 
+def test_jsonld_supports_graph_type_arrays_and_relative_job_urls():
+    payload = {
+        "@context": "https://schema.org",
+        "@graph": [{
+            "@type": ["Thing", "JobPosting"],
+            "title": "Product Analyst",
+            "url": "/jobs/product-analyst",
+            "datePosted": "2026-11-20",
+            "identifier": {"@type": "PropertyValue", "name": "Reference", "value": "PA-22"},
+            "jobLocation": [
+                {"address": {"addressLocality": "Paris", "addressCountry": "FR"}},
+                {"address": {"addressLocality": "Lyon", "addressCountry": "FR"}},
+            ],
+            "description": "<p>Analyse product data</p>",
+        }],
+    }
+    page = '<script type="application/ld+json">' + json.dumps(payload) + '</script>'
+    jobs = adapters.jsonld(
+        "example",
+        FakeHttp({"https://example.test/careers": page}),
+        urls=["https://example.test/careers"],
+    )
+    assert len(jobs) == 1
+    assert jobs[0]["id"] == "PA-22"
+    assert jobs[0]["url"] == "https://example.test/jobs/product-analyst"
+    assert jobs[0]["location"] == "Paris, FR | Lyon, FR"
+
+
 # ---------------------------------------------------------- crawl + merge
 def test_crawl_company_isolates_errors():
     res = crawl_company(co(slug="missing"), FakeHttp({}), NOW)
