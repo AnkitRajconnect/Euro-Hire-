@@ -369,6 +369,14 @@
       "Verification: " + (record.verification_method || "SIREN/SIRET matched in first-party legal notice") +
       (record.verified_at ? " · Checked " + new Date(record.verified_at).toLocaleDateString("en-GB") : "")
     );
+    const legalNoticeUrl = safeHttpsUrl(record.evidence && record.evidence.legal_notice_url);
+    if (legalNoticeUrl) {
+      const evidenceLink = node("a", "verified-website-evidence", "View matching legal notice ↗");
+      evidenceLink.href = legalNoticeUrl;
+      evidenceLink.target = "_blank";
+      evidenceLink.rel = "noopener noreferrer";
+      links.append(evidenceLink);
+    }
     card.append(heading, details, links, proof);
     return card;
   }
