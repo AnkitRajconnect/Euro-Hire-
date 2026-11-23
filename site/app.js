@@ -436,7 +436,7 @@
     jobs.forEach((job) => {
       if (job.country) counts.set(job.country, (counts.get(job.country) || 0) + 1);
     });
-    $("country").replaceChildren(element("option", { value: "", text: `All Europe (${jobs.length})` }));
+    $("country").replaceChildren(element("option", { value: "", text: `All France (${jobs.length})` }));
     [...counts.keys()].sort((a, b) => countryName(a).localeCompare(countryName(b))).forEach((code) => {
       $("country").append(element("option", { value: code, text: `${countryName(code)} (${counts.get(code)})` }));
     });
