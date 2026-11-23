@@ -4,7 +4,7 @@ from __future__ import annotations
 from ats_pipeline import (
     choose_insee_result, export_data, fetch_ats_board, init_db, is_france_location,
     normalise_wttj_hit, parse_wttj_env, store_board_result, upsert_company, upsert_job,
-    is_europe_location, is_recent_posting, is_professional_job,
+    is_europe_location, is_recent_posting, is_professional_job, parse_date,
 )
 from commoncrawl_index import board_record, surt_prefix, token_from_url
 
@@ -30,6 +30,7 @@ def test_europe_location_and_29_day_freshness():
     assert is_recent_posting("2026-10-25", today=date(2026, 11, 23))
     assert not is_recent_posting("2026-10-24", today=date(2026, 11, 23))
     assert not is_recent_posting(None, today=date(2026, 11, 23))
+    assert parse_date("Mon, 23 Nov 2026 12:00:00 GMT") == "2026-11-23"
     assert is_professional_job("Account Executive")
     assert not is_professional_job("Plumber")
 
