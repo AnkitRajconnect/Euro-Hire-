@@ -46,14 +46,11 @@ jobs:
       - name: Sync the official French SIRENE company register
         run: python -m crawler.france_registry_sync --db data/company_registry.sqlite3
 
-      - name: Discover French legal entities across regions and French-language sectors
-        run: >-
-          python -m crawler.france_discovery
-          --db data/company_registry.sqlite3
-          --limit 30000
-          --pages-per-query 2
-          --max-queries 24
-          --output /tmp/france-legal-entity-discovery.json
+      - name: Use full France SIRENE stock for employer website matching
+        run: |
+          echo "Using the full synchronized French legal-entity stock."
+          echo "The public search API is not used as a bulk crawler because it rate-limits high-volume queries."
+          python -m crawler.company_registry --db data/company_registry.sqlite3 coverage-fr
 
       - name: Discover and verify French company websites from open business-place data
         env:
