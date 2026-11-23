@@ -370,8 +370,10 @@ def upsert_company(conn: sqlite3.Connection, company: dict) -> None:
     ))
 
 
-def upsert_job(conn: sqlite3.Connection, company: dict, raw: dict) -> None:
-    now = utc_now()
+def upsert_job(
+    conn: sqlite3.Connection, company: dict, raw: dict, seen_at: str | None = None
+) -> None:
+    now = seen_at or utc_now()
     source_type = raw["source_type"]
     source_id = str(raw["source_id"])
     job_key = _job_identity(source_type, source_id)
@@ -466,7 +468,7 @@ def store_board_result(
                 None,
             )
         raw["remote"] = "remote" if raw.get("remote") else ""
-        upsert_job(conn, company, raw)
+        upsert_job(conn, company, raw, seen_at=run_started)
         is_live_fr = True
         kept += 1
 
