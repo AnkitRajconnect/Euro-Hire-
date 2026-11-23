@@ -345,9 +345,14 @@
     const verified = node("span", "state-pill active", "Legal notice matched");
     heading.append(identity, verified);
 
-    const details = node("p", "verified-website-location",
-      [record.head_office_address, record.postcode, record.city, record.region].filter(Boolean).join(" · ")
-    );
+    const placeLocation = [
+      record.website_place_address, record.website_place_postcode,
+      record.website_place_city, record.website_place_region
+    ].filter(Boolean);
+    const locationText = placeLocation.length
+      ? "Business location in discovery source: " + placeLocation.join(" · ")
+      : "Registered head office: " + (record.head_office_address || "Not supplied");
+    const details = node("p", "verified-website-location", locationText);
     const links = node("div", "verified-website-links");
     const websiteUrl = safeHttpsUrl(record.official_website);
     const registryUrl = safeHttpsUrl(record.registry_record);
@@ -394,7 +399,8 @@
     const visible = verifiedWebsiteRecords.filter((record) => {
       const haystack = [
         record.name, record.legal_name, record.siren, record.official_website,
-        record.head_office_address, record.city, record.postcode, record.region,
+        record.head_office_address, record.website_place_address,
+        record.website_place_city, record.website_place_postcode, record.website_place_region,
         record.activity_code
       ].filter(Boolean).join(" ").toLocaleLowerCase("fr");
       return !query || haystack.includes(query);
