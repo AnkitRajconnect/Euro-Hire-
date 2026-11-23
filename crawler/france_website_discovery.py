@@ -888,12 +888,23 @@ def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
             matched = sorted(sirens & expected)[0]
             return "verified_siren_match", f"French legal notice contains matching SIREN/SIRET {matched}", matched, legal_url
         other_ids.update(sirens)
+    # If a first-party legal notice contains exactly one labelled SIREN/SIRET,
+    # that identifier is stronger than the place/trading-name association.
+    # It can identify the actual legal employer even when the storefront uses
+    # a brand, subsidiary or trading name absent from SIRENE aliases.
+    if len(other_ids) == 1:
+        matched = next(iter(other_ids))
+        return "verified_siren_match", (
+            f"First-party French legal notice identifies SIREN/SIRET {matched}; "
+            "the legal identifier will be resolved against the active French registry."
+        ), matched, urls[0] if urls else None
     if other_ids:
-        return "legal_identifier_mismatch", (
-            "Legal notice contains a different SIREN/SIRET: " + ", ".join(sorted(other_ids)[:5])
+        return "needs_manual_review", (
+            "Legal notice contains multiple SIREN/SIRET identifiers without a unique registry match: "
+            + ", ".join(sorted(other_ids)[:5])
         ), None, None
     if saw_legal_page:
-        return "needs_manual_review", "Legal notice was found but no matching SIREN/SIRET was detected", None, None
+        return "needs_manual_review", "Legal notice was found but no labelled SIREN/SIRET was detected", None, None
     return "legal_notice_not_found", "No accessible French legal notice was found on the candidate domain", None, None
 
 
@@ -937,9 +948,23 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
             verified += 1
             company = con.execute(
                 """SELECT id,official_domain,domain_verified FROM companies
-                   WHERE country='FR' AND registry_id=?""", (matched_siren,)
+                   WHERE country='FR' AND registry_id=? AND registry_status='active' AND legal_person=1""",
+                (matched_siren,),
             ).fetchone()
             if company:
+                try:
+                    existing_candidate_ids = json.loads(row["candidate_registry_ids_json"] or "[]")
+                except (TypeError, ValueError):
+                    existing_candidate_ids = []
+                if matched_siren not in existing_candidate_ids:
+                    existing_candidate_ids.append(matched_siren)
+                    con.execute(
+                        """UPDATE france_website_candidates
+                           SET candidate_registry_ids_json=?,matched_company_count=?
+                           WHERE id=?""",
+                        (json.dumps(sorted(set(existing_candidate_ids))),
+                         len(set(existing_candidate_ids)), row["id"]),
+                    )
                 current_domain = (company["official_domain"] or "").lower().removeprefix("www.")
                 if not company["official_domain"] or not company["domain_verified"] or current_domain == row["candidate_domain"]:
                     con.execute(
