@@ -680,8 +680,9 @@ async def fetch_ats_board(http: "PoliteHTTP", board: dict) -> tuple[list[dict], 
             for item in payload["jobs"]:
                 offices = item.get("offices") or []
                 loc = (item.get("location") or {}).get("name", "")
-                if not loc and offices:
-                    loc = ", ".join(str(x.get("name") or x.get("location") or "") for x in offices)
+                office_names = [str(x.get("name") or x.get("location") or "") for x in offices]
+                if office_names:
+                    loc = ", ".join(dict.fromkeys([part for part in [loc, *office_names] if part]))
                 results.append(_raw_job(
                     provider, item.get("id"), item.get("title"), item.get("absolute_url"),
                     loc, item.get("country_code"),
@@ -873,7 +874,7 @@ async def fetch_ats_board(http: "PoliteHTTP", board: dict) -> tuple[list[dict], 
             offset = 0
             total = None
             while offset < 5000:
-                page_url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=100&offset={offset}&country=FR"
+                page_url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=100&offset={offset}"
                 if not await _robots_allowed(http, page_url):
                     raise PermissionError("SmartRecruiters API robots policy disallows public postings")
                 payload = await http.get_json(page_url)
