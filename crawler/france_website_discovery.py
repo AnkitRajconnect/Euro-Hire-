@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import html
+import hashlib
 import ipaddress
 import json
 import re
@@ -208,8 +209,14 @@ def extract_overture_source_evidence(sources_json) -> list[dict]:
     sources = _decode_json_value(sources_json)
     if not isinstance(sources, list):
         return []
-    fields = ("property", "dataset", "license", "record_id", "update_time",
-              "confidence", "provider", "resource", "version")
+    # Preserve the per-source licensing and attribution metadata that Overture
+    # attaches to Places records. Licences vary by provider and release; never
+    # collapse them into one assumed theme-wide licence.
+    fields = (
+        "property", "dataset", "license", "license_url", "record_id", "update_time",
+        "confidence", "provider", "resource", "version", "url", "source_url",
+        "attribution", "attribution_url", "copyright", "notice",
+    )
     result = []
     for source in sources:
         if isinstance(source, dict):
@@ -798,6 +805,137 @@ class _PageParser(HTMLParser):
             self._anchor_text = []
 
 
+FRENCH_TECH_NEXT40_120_URL = (
+    "https://lafrenchtech.gouv.fr/en/programme/french-tech-next40-120/"
+)
+
+
+def ingest_french_tech_next40_120(con, http: Http) -> dict:
+    """Import official French Tech cohort company links as unverified candidates.
+
+    Company names and outbound links are discovery leads only. A candidate is
+    promoted only after its own first-party legal notice identifies an active
+    SIREN/SIRET in the synchronized SIRENE register. The source page does not
+    declare a reusable bulk-data licence, so we retain its URL and do not copy
+    descriptive text or claim an open-data licence.
+    """
+    if not http.allowed_by_robots(FRENCH_TECH_NEXT40_120_URL):
+        raise PermissionError("Mission French Tech robots.txt disallows the cohort page")
+    page = http.get_text(FRENCH_TECH_NEXT40_120_URL)
+    parser = _PageParser()
+    parser.feed(page)
+
+    seen: set[tuple[str, str]] = set()
+    imported = 0
+    skipped = 0
+    cohort_release = "french-tech-next40-120-current"
+    for href, label in parser.links:
+        name = re.sub(r"\\s+", " ", html.unescape(label or "")).strip()
+        if len(name) < 2 or name.casefold() in {
+            "see all laureates", "see all winners", "learn more", "read more",
+        }:
+            skipped += 1
+            continue
+        cleaned = _clean_candidate_url(urljoin(FRENCH_TECH_NEXT40_120_URL, href or ""))
+        if not cleaned:
+            skipped += 1
+            continue
+        website_url, domain = cleaned
+        keyset = name_keys(name)
+        if not keyset:
+            skipped += 1
+            continue
+        normalized = min(keyset, key=lambda value: (len(value), value))
+        identity = (domain, normalized)
+        if identity in seen:
+            continue
+        seen.add(identity)
+
+        _upsert_candidate(
+            con,
+            place_id=f"mission-french-tech:{cohort_release}:{hashlib.sha256((name + website_url).encode('utf-8')).hexdigest()[:16]}",
+            place_name=name,
+            website_url=website_url,
+            domain=domain,
+            normalized_name=normalized,
+            registry_ids=[],
+            match_method="french_tech_official_cohort",
+            address=None,
+            locality=None,
+            postcode=None,
+            region=None,
+            confidence=1.0,
+            release=cohort_release,
+            observed_names=[{
+                "value": name,
+                "language": "en",
+                "variant": "official_cohort_label",
+                "source_field": "Mission French Tech Next40/120 page link text",
+            }],
+            source_evidence=[{
+                "provider": "Mission French Tech",
+                "source": "French Tech Next40/120",
+                "source_url": FRENCH_TECH_NEXT40_120_URL,
+                "source_website_url": website_url,
+                "retrieved_at": now_iso(),
+                "licence_status": "No bulk-data reuse licence identified on the source page; retained as a discovery pointer only.",
+            }],
+            place_category="startup_scaleup_official_cohort",
+        )
+        imported += 1
+
+    if imported == 0:
+        raise RuntimeError("No official company links could be parsed from the French Tech cohort page")
+    con.commit()
+    return {
+        "source": "Mission French Tech Next40/120",
+        "source_url": FRENCH_TECH_NEXT40_120_URL,
+        "companies_discovered": imported,
+        "links_skipped": skipped,
+        "verification": "Candidate websites only; legal-identifier verification is still required.",
+    }
+
+
+def _mark_verified_startup_signal(con, company_id: int, raw_json: str | None,
+                                  source_evidence_json: str | None,
+                                  legal_notice_url: str | None,
+                                  verified_at: str) -> None:
+    """Persist an official startup-cohort signal only after legal identity verification."""
+    try:
+        raw = json.loads(raw_json or "{}")
+    except (TypeError, ValueError):
+        raw = {}
+    try:
+        evidence = json.loads(source_evidence_json or "[]")
+    except (TypeError, ValueError):
+        evidence = []
+    startup_sources = raw.get("startup_discovery_sources")
+    if not isinstance(startup_sources, list):
+        startup_sources = []
+    added = False
+    for item in evidence if isinstance(evidence, list) else []:
+        if not isinstance(item, dict) or item.get("provider") != "Mission French Tech":
+            continue
+        signal = {
+            "source": item.get("source"),
+            "source_url": item.get("source_url"),
+            "source_website_url": item.get("source_website_url"),
+            "retrieved_at": item.get("retrieved_at"),
+            "verified_at": verified_at,
+            "legal_notice_url": legal_notice_url,
+        }
+        if signal not in startup_sources:
+            startup_sources.append(signal)
+            added = True
+    if added or startup_sources:
+        raw["startup_discovery_sources"] = startup_sources
+        raw["startup_cohort_verified"] = True
+        con.execute(
+            "UPDATE companies SET raw_json=?,updated_at=? WHERE id=?",
+            (json.dumps(raw, ensure_ascii=False), verified_at, company_id),
+        )
+
+
 def _plain_text(page: str) -> str:
     parser = _PageParser()
     try:
@@ -996,7 +1134,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
 
         if status == "verified_siren_match":
             resolved_company = con.execute(
-                """SELECT id,official_domain,domain_verified FROM companies
+                """SELECT id,official_domain,domain_verified,raw_json FROM companies
                    WHERE country='FR' AND registry_id=? AND registry_status='active' AND legal_person=1""",
                 (matched_siren,),
             ).fetchone()
@@ -1023,6 +1161,10 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
                            domain_method='siren_in_legal_notice',domain_checked_at=?,updated_at=?
                            WHERE id=?""",
                         (row["candidate_domain"], checked_at, checked_at, resolved_company["id"]),
+                    )
+                    _mark_verified_startup_signal(
+                        con, resolved_company["id"], resolved_company["raw_json"],
+                        row["source_evidence_json"], verified_legal_notice_url, checked_at,
                     )
                     verified += 1
                 else:
@@ -1353,6 +1495,23 @@ def run(db: Path, *, verify_limit: int = 1000, report_path: Path | None = None,
                 "note": "No Wikidata candidate rows were added in this run; existing candidates remain available for verification.",
             }
             print(f"Wikidata discovery failed; continuing with existing candidates: {exc}")
+
+        # The official Mission French Tech cohort is a separate startup/scale-up
+        # discovery route, including online-first companies absent from place data.
+        # It only creates candidates; first-party SIREN/SIRET verification remains
+        # the gate before a domain or career source can be approved.
+        try:
+            startup_result = ingest_french_tech_next40_120(
+                con, Http(min_delay=1.0, timeout=45, retries=2)
+            )
+            source_runs["french_tech_next40_120"] = {"ok": True, **startup_result}
+        except Exception as exc:
+            source_runs["french_tech_next40_120"] = {
+                "ok": False,
+                "error": str(exc)[:1000],
+                "note": "Existing startup candidates remain available for verification.",
+            }
+            print(f"French Tech startup discovery failed; continuing with stored candidates: {exc}")
 
         verification = verify_pending_candidates(
             con, Http(min_delay=0.5, timeout=20, retries=1), limit=verify_limit
