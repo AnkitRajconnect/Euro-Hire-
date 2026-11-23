@@ -43,24 +43,25 @@ def load_companies(path: Path, only: set[str] | None = None, registry_db: Path |
             ]
         for item in candidates:
             item.setdefault("ats_slug", item.get("slug"))
-            reviewed = item.get("source_reviewed_on")
-            item["verification"] = {
-                "mode": "curated_public_ats",
-                "status": "approved",
-                "domain": {
-                    "url": "https://" + str(item.get("official_domain", "")),
-                    "verified": True,
-                    "method": "public_ats_board_review",
-                },
-                "source": {
-                    "approved": True,
-                    "verified": True,
-                    "method": "public_ats_board_review",
-                    "career_url": item.get("career_url"),
-                    "evidence_url": item.get("official_careers_url"),
-                    "checked_at": reviewed,
-                },
-            }
+            if not item.get("verification"):
+                reviewed = item.get("source_reviewed_on")
+                item["verification"] = {
+                    "mode": "curated_public_ats",
+                    "status": "approved",
+                    "domain": {
+                        "url": "https://" + str(item.get("official_domain", "")),
+                        "verified": True,
+                        "method": "public_ats_board_review",
+                    },
+                    "source": {
+                        "approved": True,
+                        "verified": True,
+                        "method": "public_ats_board_review",
+                        "career_url": item.get("career_url"),
+                        "evidence_url": item.get("official_careers_url"),
+                        "checked_at": reviewed,
+                    },
+                }
     elif registry_db is not None and registry_db.exists():
         candidates = approved_companies(registry_db)
     elif approved_file.exists():
