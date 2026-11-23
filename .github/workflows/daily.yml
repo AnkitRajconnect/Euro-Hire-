@@ -19,7 +19,7 @@ concurrency:
 jobs:
   crawl-and-package:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -50,8 +50,8 @@ jobs:
         run: >-
           python -m crawler.france_discovery
           --db data/company_registry.sqlite3
-          --limit 500
-          --pages-per-query 3
+          --limit 30000
+          --pages-per-query 2
           --max-queries 24
           --output /tmp/france-discovery-report.json
 
@@ -65,7 +65,7 @@ jobs:
         run: >-
           python -m crawler.france_domain_queue
           --db data/company_registry.sqlite3
-          --limit 500
+          --limit 1000
           --output /tmp/france-domain-review-queue.json
 
       - name: Run the automated test suite
@@ -73,7 +73,7 @@ jobs:
 
       - name: Discover career pages on verified French employer domains
         run: |
-          python -m crawler.company_registry --db data/company_registry.sqlite3 discover-all --country FR --limit 500
+          python -m crawler.company_registry --db data/company_registry.sqlite3 discover-all --country FR --limit 1000
           python -m crawler.company_registry --db data/company_registry.sqlite3 coverage-fr
 
       - name: Crawl all approved French employer career sources (no fixed company list)

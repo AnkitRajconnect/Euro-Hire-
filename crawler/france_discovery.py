@@ -36,6 +36,13 @@ SEARCH_TERMS = (
     "communication", "immobilier", "tourisme", "formation",
 )
 
+# Official region codes used by the French company-search API, including the
+# overseas regions and Mayotte. Every region is searched for every term.
+SEARCH_REGIONS = (
+    "01", "02", "03", "04", "06", "11", "24", "27", "28",
+    "32", "44", "52", "53", "75", "76", "84", "93", "94",
+)
+
 
 def _candidate_from_result(item: dict, query: str) -> dict | None:
     """Return a strictly identified active French legal-person candidate."""
@@ -51,7 +58,7 @@ def _candidate_from_result(item: dict, query: str) -> dict | None:
         return None
     # Keep companies/legal persons only. Individual entrepreneurs and unknown
     # legal forms are not silently promoted into the employer database.
-    if not legal_form.startswith(("3", "4", "5", "6")):
+    if not legal_form.startswith(("3", "4", "5", "6", "7", "8", "9")):
         return None
 
     head_office = item.get("siege") or {}
@@ -101,45 +108,103 @@ def _candidate_from_result(item: dict, query: str) -> dict | None:
     }
 
 
-def discover_france(http: Http, *, limit: int = 500, pages_per_query: int = 1,
-                    max_queries: int = 24, queries: tuple[str, ...] = SEARCH_TERMS) -> list[dict]:
-    """Discover active French companies through bounded official API searches."""
+def discover_france(http: Http, *, limit: int = 30000, pages_per_query: int = 2,
+                    max_queries: int = 24, queries: tuple[str, ...] = SEARCH_TERMS,
+                    regions: tuple[str, ...] = SEARCH_REGIONS,
+                    cursor_db: Path | None = None) -> list[dict]:
+    """Discover French employer candidates across all French regions and sectors.
+
+    The public search API is paginated rather than a bulk dump. Each
+    region/query pair has a durable page cursor in the SIRENE cache so daily
+    runs move into deeper result pages instead of repeatedly returning the
+    first batch. Candidates are never approved for crawling by this step.
+    """
     if limit < 1 or pages_per_query < 1 or max_queries < 1:
         raise ValueError("limit, pages_per_query and max_queries must all be positive")
+    if not regions:
+        raise ValueError("At least one French region must be selected")
+
+    con = connect(cursor_db) if cursor_db is not None else None
+    if con is not None:
+        con.execute("""CREATE TABLE IF NOT EXISTS france_discovery_cursor (
+            region TEXT NOT NULL,
+            query TEXT NOT NULL,
+            next_page INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(region, query)
+        )""")
+        con.commit()
+
     found: dict[str, dict] = {}
-    for query in queries[:max_queries]:
-        for page in range(1, pages_per_query + 1):
-            params = {
-                "q": query,
-                "etat_administratif": "A",
-                "minimal": "true",
-                "include": "siege",
-                "page": page,
-                "per_page": 25,
-            }
-            payload = http.get_json(API_SEARCH, params=params,
-                                    headers={"Accept": "application/json"})
-            results = payload.get("results", []) if isinstance(payload, dict) else []
-            if not isinstance(results, list) or not results:
-                break
-            for item in results:
-                candidate = _candidate_from_result(item, query)
-                if candidate is None:
-                    continue
-                siren = candidate["registry_id"]
-                if siren not in found:
-                    found[siren] = candidate
-                else:
-                    # Retain all discovery queries as provenance without
-                    # duplicating a company or replacing its legal identity.
-                    evidence = found[siren]["raw"].setdefault("also_found_by", [])
-                    if query not in evidence:
-                        evidence.append(query)
-                if len(found) >= limit:
-                    return list(found.values())
-            if len(results) < 25:
-                break
-    return list(found.values())
+
+    def save_cursor(region: str, query: str, next_page: int) -> None:
+        if con is None:
+            return
+        con.execute(
+            """INSERT INTO france_discovery_cursor(region,query,next_page,updated_at)
+               VALUES(?,?,?,?)
+               ON CONFLICT(region,query) DO UPDATE SET
+               next_page=excluded.next_page,updated_at=excluded.updated_at""",
+            (region, query, next_page, now_iso()),
+        )
+        con.commit()
+
+    try:
+        for region in regions:
+            for query in queries[:max_queries]:
+                cursor = con.execute(
+                    "SELECT next_page FROM france_discovery_cursor WHERE region=? AND query=?",
+                    (region, query),
+                ).fetchone() if con is not None else None
+                page = int(cursor["next_page"]) if cursor else 1
+                if page < 1 or page > 100:
+                    page = 1
+
+                for _ in range(pages_per_query):
+                    params = {
+                        "q": query,
+                        "region": region,
+                        "etat_administratif": "A",
+                        "minimal": "true",
+                        "include": "siege",
+                        "page": page,
+                        "per_page": 25,
+                    }
+                    payload = http.get_json(API_SEARCH, params=params,
+                                            headers={"Accept": "application/json"})
+                    results = payload.get("results", []) if isinstance(payload, dict) else []
+                    if not isinstance(results, list) or not results:
+                        page = 1
+                        break
+
+                    for item in results:
+                        candidate = _candidate_from_result(item, query)
+                        if candidate is None:
+                            continue
+                        candidate["raw"]["discovery_region"] = region
+                        siren = candidate["registry_id"]
+                        if siren not in found:
+                            found[siren] = candidate
+                        else:
+                            evidence = found[siren]["raw"].setdefault("also_found_by", [])
+                            proof = {"query": query, "region": region}
+                            if proof not in evidence:
+                                evidence.append(proof)
+
+                    if len(found) >= limit:
+                        save_cursor(region, query, 1 if page >= 100 else page + 1)
+                        return list(found.values())
+
+                    if len(results) < 25:
+                        page = 1
+                        break
+                    page = 1 if page >= 100 else page + 1
+
+                save_cursor(region, query, page)
+        return list(found.values())
+    finally:
+        if con is not None:
+            con.close()
 
 
 def import_discoveries(db: Path, candidates: list[dict]) -> int:
@@ -184,14 +249,18 @@ def main(argv=None) -> int:
     parser.add_argument("--limit", type=int, default=500)
     parser.add_argument("--pages-per-query", type=int, default=1)
     parser.add_argument("--max-queries", type=int, default=24)
+    parser.add_argument("--regions", default="", help="Optional comma-separated French region codes; default covers all French regions")
     parser.add_argument("--output", default="/tmp/france-discovery-report.json")
     args = parser.parse_args(argv)
 
+    regions = tuple(value.strip() for value in args.regions.split(",") if value.strip()) if args.regions else SEARCH_REGIONS
     candidates = discover_france(
         Http(min_delay=0.5, timeout=25, retries=3),
         limit=args.limit,
         pages_per_query=args.pages_per_query,
         max_queries=args.max_queries,
+        regions=regions,
+        cursor_db=Path(args.db),
     )
     imported = import_discoveries(Path(args.db), candidates)
     report = {
@@ -201,7 +270,10 @@ def main(argv=None) -> int:
         "imported": imported,
         "published": 0,
         "website_verified": 0,
-        "note": "All records are official-register candidates only. No domains, career pages or jobs were invented or auto-approved.",
+        "regions_queried": list(regions),
+        "search_terms": list(SEARCH_TERMS[:args.max_queries]),
+        "pages_per_region_and_term": args.pages_per_query,
+        "note": "Nationwide regional and activity-term discovery. The public search API is paginated and excludes non-diffusible records; this is a rolling candidate discovery pass, not a claim that every French legal entity has been enumerated. No domains, career pages or jobs are inferred or auto-approved.",
         "companies": [
             {
                 "siren": item["registry_id"],
@@ -218,7 +290,9 @@ def main(argv=None) -> int:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     employer_count = sum(x["raw"]["employer_scope"] == "employer" for x in candidates)
-    print(f"Official French companies discovered: {len(candidates)}")
+    print(f"French regions queried: {len(regions)}")
+    print(f"Search terms per region: {min(args.max_queries, len(SEARCH_TERMS))}; pages per term/region: {args.pages_per_query}")
+    print(f"Official French entities discovered in this rolling pass: {len(candidates)}")
     print(f"Employer evidence at head office: {employer_count}")
     print(f"Imported as unapproved candidates: {imported}")
     print("Websites verified: 0 | Career sources approved: 0 | Published by this step: 0")

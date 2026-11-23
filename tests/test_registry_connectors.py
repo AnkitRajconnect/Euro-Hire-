@@ -248,7 +248,7 @@ def test_gleif_country_filter_is_applied_and_unknown_status_stays_pending():
 
 def test_france_employer_scope_uses_sirene_employee_bands():
     assert _classify_fr_employer_range("NN") == "non_employer"
-    assert _classify_fr_employer_range("00") == "employer"
+    assert _classify_fr_employer_range("00") == "non_employer"
     assert _classify_fr_employer_range("01") == "employer"
     assert _classify_fr_employer_range("53") == "employer"
     assert _classify_fr_employer_range("") == "unknown"

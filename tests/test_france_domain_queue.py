@@ -37,3 +37,24 @@ def test_france_domain_queue_only_lists_active_unverified_employers(tmp_path):
     assert rows[0]["official_registry_record"].endswith("/123456789")
     assert rows[0]["domain_verified"] is False
     assert "do not infer" in rows[0]["next_action"]
+
+
+def test_france_domain_queue_rotates_to_later_employers_between_batches(tmp_path):
+    db = tmp_path / "rotating-registry.sqlite3"
+    con = connect(db)
+    try:
+        for number in ("123456789", "223456789", "323456789"):
+            upsert_candidate(
+                con, country="FR", registry_id=number, legal_name="Employer " + number,
+                registry_status="active", registry_source="INSEE SIRENE stock", legal_person=True,
+                raw={"employer_scope": "employer", "employee_range": "11"},
+                registry_checked_at="2026-11-23",
+            )
+        con.commit()
+    finally:
+        con.close()
+
+    first = build_queue(db, 2)
+    second = build_queue(db, 2)
+    assert [item["siren"] for item in first] == ["123456789", "223456789"]
+    assert [item["siren"] for item in second] == ["323456789", "123456789"]

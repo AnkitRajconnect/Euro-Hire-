@@ -1093,11 +1093,11 @@ def import_cbe_file(con: sqlite3.Connection, path: Path, mapping_path: Path,
 
 
 def _classify_fr_employer_range(value: str) -> str:
-    """Classify SIRENE employee bands; missing data is never assumed to employ."""
+    """Classify SIRENE employee bands; zero and missing headcount are not employers."""
     code = str(value or "").strip().upper()
-    if code == "NN":
+    if code in {"NN", "00"}:
         return "non_employer"
-    if code in {"00", "01", "02", "03", "11", "12", "21", "22", "31", "32", "41", "42", "51", "52", "53"}:
+    if code in {"01", "02", "03", "11", "12", "21", "22", "31", "32", "41", "42", "51", "52", "53"}:
         return "employer"
     return "unknown"
 

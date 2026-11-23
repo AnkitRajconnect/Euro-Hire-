@@ -95,7 +95,7 @@ def sync(db_path: Path, force: bool = False) -> int:
                 "active_values": ["A"],
                 "inactive_values": ["C"],
                 "legal_form_column": "categorieJuridiqueUniteLegale",
-                "legal_form_prefixes": ["3", "4", "5", "6"],
+                "legal_form_prefixes": ["3", "4", "5", "6", "7", "8", "9"],
                 "diffusion_column": "statutDiffusionUniteLegale",
                 "excluded_diffusion_values": ["P", "N"],
                 "activity_column": "activitePrincipaleUniteLegale",
