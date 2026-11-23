@@ -399,12 +399,15 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
         con.execute(
             """UPDATE france_website_candidates
                SET candidate_url=?, source_record_ids_json=?, candidate_registry_ids_json=?,
-                   matched_company_count=?, last_seen_at=?, source_release=?,
+                   matched_company_count=?, match_score=MAX(match_score, ?),
+                   last_seen_at=?, source_release=?,
                    confidence=CASE WHEN confidence IS NULL THEN ? WHEN ? IS NULL THEN confidence
                                    ELSE MAX(confidence, ?) END,
                    address=COALESCE(address, ?), locality=COALESCE(locality, ?),
                    postcode=COALESCE(postcode, ?), region=COALESCE(region, ?),
-                   match_method=CASE WHEN match_method='exact_trading_name' THEN ? ELSE match_method END,
+                   match_method=CASE WHEN match_method IN
+                       ('exact_trading_name','unmatched_place_name','wikidata_siren_property')
+                       THEN ? ELSE match_method END,
                    matched_names_json=?, observed_names_json=?, source_evidence_json=?,
                    place_category=COALESCE(place_category, ?),
                    status=?,
@@ -412,7 +415,8 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                    verification_note=CASE WHEN ? THEN NULL ELSE verification_note END,
                    verified_legal_notice_url=CASE WHEN ? THEN NULL ELSE verified_legal_notice_url END
                WHERE id=?""",
-            (website_url, json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids), now,
+            (website_url, json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids),
+             100.0 if len(merged_ids) == 1 else (75.0 if merged_ids else 0.0), now,
              release, confidence, confidence, confidence, address, locality, postcode,
              region, match_method, json.dumps(merged_names, ensure_ascii=False),
              json.dumps(merged_observed, ensure_ascii=False),
