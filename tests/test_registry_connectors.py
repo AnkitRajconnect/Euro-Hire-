@@ -283,3 +283,24 @@ def test_france_stock_import_records_employer_scope_and_requires_employee_field(
         assert rows["345678901"]["employer_scope"] == "unknown"
     finally:
         con.close()
+
+
+
+def test_france_headcount_evidence_survives_registry_refresh_without_a_band(tmp_path):
+    from crawler.company_registry import upsert_candidate
+
+    con = connect(tmp_path / "registry.sqlite3")
+    upsert_candidate(con, country="FR", registry_id="123456789", legal_name="Employer SAS",
+                     registry_status="active", registry_source="INSEE SIRENE stock", legal_person=True,
+                     raw={"employee_range": "11", "employee_range_date": "2023",
+                          "employer_scope": "employer"})
+    upsert_candidate(con, country="FR", registry_id="123456789", legal_name="Employer SAS",
+                     registry_status="active", registry_source="INSEE SIRENE API", legal_person=True,
+                     raw={"employee_range": None, "employee_range_date": None,
+                          "employer_scope": "unknown", "activity_code": "62.01Z"})
+    row = con.execute("SELECT raw_json FROM companies WHERE country='FR'").fetchone()
+    payload = json.loads(row["raw_json"])
+    assert payload["employer_scope"] == "employer"
+    assert payload["employee_range"] == "11"
+    assert payload["activity_code"] == "62.01Z"
+    con.close()
