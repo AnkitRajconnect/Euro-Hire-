@@ -340,14 +340,20 @@ async def run_discovery(db_path, report_path, max_crawls=2, seed_only=False, max
         for provider, slug, jobs in found:
             display_name = next((job.get("company_name") for job in jobs if job.get("company_name")), "") or slug_to_name(slug.split("|", 1)[0] if provider == "workday" else slug)
             registry, match_status = await registry_lookup(client, registry_limiter, display_name)
+            company_siren = None
+            if match_status == "exact" and registry:
+                try:
+                    company_siren = upsert_company(connection, registry, checked_at)
+                except ValueError as exc:
+                    match_status = "invalid_registry_record"
+                    print(f"! {provider}/{slug}: rejected registry match: {exc}", file=sys.stderr)
             report["registry_matches"] += int(match_status == "exact")
             report["registry_api_errors"] += int(match_status == "api_error")
             report["registry_unmatched"] += int(match_status not in {"exact", "api_error"})
-            company_id = upsert_company(
-                connection, f"{provider}:{slug}", display_name,
-                registry, match_status, checked_at
+            upsert_source(
+                connection, company_siren, display_name, provider, slug,
+                match_status, checked_at
             )
-            upsert_source(connection, company_id, display_name, provider, slug, checked_at)
             stats = report["provider_results"].setdefault(provider, {"boards": 0, "france_jobs": 0})
             stats["boards"] += 1
             stats["france_jobs"] += len(jobs)

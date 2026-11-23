@@ -60,7 +60,7 @@ A legal entity is linked only when all of these checks pass:
 
 The government API already excludes non-diffusible entities; the explicit status check is retained as an additional safeguard. The pipeline never reads or stores dirigeants, personal emails or telephone fields. Public job descriptions are cleaned of email addresses and phone numbers before they are saved.
 
-SIREN is nullable. A brand or trading name is not forced into an unrelated legal entity. This makes the registry an enrichment layer, not a publication gate for valid public vacancies.
+Only verified legal entities enter the companies table, whose primary key is SIREN. An unmatched ATS brand remains in ats_sources with a nullable company_siren; its public jobs can still be shown without pretending the brand is a verified legal entity.
 
 ## Database and exports
 
@@ -70,7 +70,7 @@ SIREN is nullable. A brand or trading name is not forced into an unrelated legal
 - site/data/jobs.json: frontend-compatible export used by the existing Euro-Hire website.
 - data/discovery_report.json and data/sync_report.json: coverage and sync outcomes.
 
-The database uses an internal company_id primary key and a unique nullable SIREN. This is deliberate: some public ATS brands cannot be confidently matched to a legal entity, and those boards should not be discarded. Multiple ATS boards with the same matched SIREN can share one company row.
+The companies table uses SIREN as its primary key and contains only active, fully diffusible legal companies that pass exact name matching. ATS sources hold a nullable foreign key to companies.siren. Boards that cannot be safely matched remain in ats_sources and can still contribute jobs; multiple boards with the same matched SIREN share one company row.
 
 Both workflows use the same GitHub Actions concurrency group so weekly and daily jobs cannot write the SQLite database at the same time.
 

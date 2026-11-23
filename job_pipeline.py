@@ -735,25 +735,24 @@ def create_database(path: str | Path) -> sqlite3.Connection:
     connection.executescript(
         """
         CREATE TABLE IF NOT EXISTS companies (
-            company_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            siren TEXT UNIQUE,
-            identity_key TEXT UNIQUE,
+            siren TEXT PRIMARY KEY CHECK(length(siren)=9),
             name TEXT NOT NULL,
-            legal_name TEXT,
+            legal_name TEXT NOT NULL,
             naf_code TEXT,
             city TEXT,
-            etat_administratif TEXT,
-            nature_juridique TEXT,
-            statut_diffusion TEXT,
-            registry_match TEXT NOT NULL DEFAULT 'not_checked',
-            registry_checked_at TEXT,
+            etat_administratif TEXT NOT NULL CHECK(etat_administratif='A'),
+            nature_juridique TEXT NOT NULL CHECK(nature_juridique<>'1000'),
+            statut_diffusion TEXT NOT NULL CHECK(statut_diffusion='O'),
+            registry_checked_at TEXT NOT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS ats_sources (
             source_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company_id INTEGER NOT NULL REFERENCES companies(company_id),
+            company_siren TEXT REFERENCES companies(siren),
             display_name TEXT NOT NULL,
+            registry_match TEXT NOT NULL DEFAULT 'unmatched',
+            registry_checked_at TEXT,
             ats_type TEXT NOT NULL,
             ats_slug TEXT NOT NULL,
             board_url TEXT NOT NULL,
@@ -782,9 +781,9 @@ def create_database(path: str | Path) -> sqlite3.Connection:
             UNIQUE(source_id, external_id)
         );
         CREATE INDEX IF NOT EXISTS idx_sources_active ON ats_sources(active);
+        CREATE INDEX IF NOT EXISTS idx_sources_company ON ats_sources(company_siren);
         CREATE INDEX IF NOT EXISTS idx_jobs_active ON jobs(is_active, posted_at);
         CREATE INDEX IF NOT EXISTS idx_jobs_source ON jobs(source_id, is_active);
-        CREATE INDEX IF NOT EXISTS idx_companies_siren ON companies(siren);
         """
     )
     connection.commit()
@@ -793,94 +792,89 @@ def create_database(path: str | Path) -> sqlite3.Connection:
 
 def upsert_company(
     connection: sqlite3.Connection,
-    identity_key: str,
-    display_name: str,
-    registry: dict[str, Any] | None,
-    registry_match: str,
+    registry: dict[str, Any],
     checked_at: str,
-) -> int:
-    registry = registry or {}
-    siren = registry.get("siren")
-    row = None
-    if siren:
-        row = connection.execute("SELECT company_id FROM companies WHERE siren=?", (siren,)).fetchone()
-    if row is None:
-        row = connection.execute("SELECT company_id FROM companies WHERE identity_key=?", (identity_key,)).fetchone()
+) -> str:
+    """Persist only an explicitly active, fully diffusible legal company."""
+    if not isinstance(registry, dict):
+        raise ValueError("registry record is not an object")
+    if registry.get("etat_administratif") != "A":
+        raise ValueError("registry entity is not administratively active")
+    nature = str(registry.get("nature_juridique") or "")
+    if not nature or nature == "1000":
+        raise ValueError("registry entity is not a corporate legal person")
+    if registry.get("statut_diffusion") != "O":
+        raise ValueError("registry entity is not fully diffusible")
+
+    siren = str(registry.get("siren") or "").strip()
+    if not re.fullmatch(r"[0-9]{9}", siren):
+        raise ValueError("registry record has no valid 9-digit SIREN")
+    legal_name = str(registry.get("nom_raison_sociale") or registry.get("nom_complet") or "").strip()
+    if not legal_name:
+        raise ValueError("registry record has no legal name")
     siege = registry.get("siege") or {}
-    legal_name = registry.get("nom_raison_sociale") or registry.get("nom_complet")
     naf = siege.get("activite_principale") or registry.get("activite_principale")
     city = siege.get("libelle_commune") or siege.get("commune")
 
-    if row:
-        company_id = int(row["company_id"])
-        connection.execute(
-            """
-            UPDATE companies SET
-                siren=COALESCE(?, siren),
-                identity_key=COALESCE(identity_key, ?),
-                legal_name=COALESCE(?, legal_name),
-                naf_code=COALESCE(?, naf_code),
-                city=COALESCE(?, city),
-                etat_administratif=COALESCE(?, etat_administratif),
-                nature_juridique=COALESCE(?, nature_juridique),
-                statut_diffusion=COALESCE(?, statut_diffusion),
-                registry_match=CASE WHEN ?='exact' THEN 'exact' ELSE registry_match END,
-                registry_checked_at=?,
-                updated_at=?
-            WHERE company_id=?
-            """,
-            (
-                siren, identity_key, legal_name, naf, city,
-                registry.get("etat_administratif"), registry.get("nature_juridique"),
-                registry.get("statut_diffusion"), registry_match,
-                checked_at, checked_at, company_id,
-            ),
-        )
-        return company_id
-
-    cursor = connection.execute(
+    connection.execute(
         """
         INSERT INTO companies (
-            siren, identity_key, name, legal_name, naf_code, city,
-            etat_administratif, nature_juridique, statut_diffusion,
-            registry_match, registry_checked_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            siren, name, legal_name, naf_code, city, etat_administratif,
+            nature_juridique, statut_diffusion, registry_checked_at,
+            created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'A', ?, 'O', ?, ?, ?)
+        ON CONFLICT(siren) DO UPDATE SET
+            name=excluded.name,
+            legal_name=excluded.legal_name,
+            naf_code=COALESCE(excluded.naf_code, companies.naf_code),
+            city=COALESCE(excluded.city, companies.city),
+            nature_juridique=excluded.nature_juridique,
+            statut_diffusion='O',
+            registry_checked_at=excluded.registry_checked_at,
+            updated_at=excluded.updated_at
         """,
-        (
-            siren, identity_key, display_name, legal_name, naf, city,
-            registry.get("etat_administratif"), registry.get("nature_juridique"),
-            registry.get("statut_diffusion"), registry_match,
-            checked_at, checked_at, checked_at,
-        ),
+        (siren, legal_name, legal_name, naf, city, nature, checked_at, checked_at, checked_at),
     )
-    return int(cursor.lastrowid)
+    return siren
 
 
 def upsert_source(
     connection: sqlite3.Connection,
-    company_id: int,
+    company_siren: str | None,
     display_name: str,
     provider: str,
     slug: str,
+    registry_match: str,
     checked_at: str,
 ) -> int:
+    """Store a public job board even when its SIREN cannot be safely matched."""
     connection.execute(
         """
         INSERT INTO ats_sources (
-            company_id, display_name, ats_type, ats_slug, board_url,
-            active, first_discovered_at, last_checked_at, last_success_at, last_error
-        ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, NULL)
+            company_siren, display_name, registry_match, registry_checked_at,
+            ats_type, ats_slug, board_url, active, first_discovered_at,
+            last_checked_at, last_success_at, last_error
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, NULL)
         ON CONFLICT(ats_type, ats_slug) DO UPDATE SET
-            company_id=excluded.company_id,
+            company_siren=COALESCE(excluded.company_siren, ats_sources.company_siren),
             display_name=excluded.display_name,
+            registry_match=CASE
+                WHEN excluded.registry_match='exact' THEN 'exact'
+                WHEN ats_sources.registry_match='exact' THEN 'exact'
+                ELSE excluded.registry_match
+            END,
+            registry_checked_at=excluded.registry_checked_at,
             board_url=excluded.board_url,
             active=1,
             last_checked_at=excluded.last_checked_at,
             last_success_at=excluded.last_success_at,
             last_error=NULL
         """,
-        (company_id, display_name, provider, slug, board_url(provider, slug),
-         checked_at, checked_at, checked_at),
+        (
+            company_siren, display_name, registry_match, checked_at,
+            provider, slug, board_url(provider, slug),
+            checked_at, checked_at, checked_at,
+        ),
     )
     row = connection.execute(
         "SELECT source_id FROM ats_sources WHERE ats_type=? AND ats_slug=?",
@@ -1042,7 +1036,7 @@ def export_active_jobs(connection: sqlite3.Connection, output_dir: str | Path) -
                c.siren, c.naf_code, c.registry_checked_at
         FROM jobs j
         JOIN ats_sources s ON s.source_id=j.source_id
-        JOIN companies c ON c.company_id=s.company_id
+        LEFT JOIN companies c ON c.siren=s.company_siren
         WHERE j.is_active=1 AND s.active=1
         ORDER BY COALESCE(j.posted_at, j.first_seen_at) DESC
         """
@@ -1086,9 +1080,11 @@ def export_active_jobs(connection: sqlite3.Connection, output_dir: str | Path) -
 def read_active_sources(connection: sqlite3.Connection) -> list[sqlite3.Row]:
     return connection.execute(
         """
-        SELECT s.*, c.name AS company_name, c.siren, c.naf_code, c.registry_checked_at
+        SELECT s.*, COALESCE(c.name, s.display_name) AS company_name,
+               s.company_siren AS siren, c.naf_code,
+               COALESCE(c.registry_checked_at, s.registry_checked_at) AS registry_checked_at
         FROM ats_sources s
-        JOIN companies c ON c.company_id=s.company_id
+        LEFT JOIN companies c ON c.siren=s.company_siren
         WHERE s.active=1
         ORDER BY s.ats_type, s.ats_slug
         """

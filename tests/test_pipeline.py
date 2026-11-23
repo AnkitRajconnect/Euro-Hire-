@@ -7,8 +7,8 @@ import pytest
 from discover_companies import comparable_name
 from job_pipeline import (
     PROVIDERS, clean_public_text, create_database, extract_board_token,
-    is_france_location, job_is_in_france, normalise_job, payload_shape_valid, board_url, upsert_company,
-    upsert_jobs_for_source, upsert_source,
+    is_france_location, job_is_in_france, normalise_job, payload_shape_valid, board_url,
+    upsert_company, upsert_jobs_for_source, upsert_source,
 )
 
 
@@ -93,15 +93,34 @@ def test_job_normalization_removes_personal_contact_details():
     assert clean_public_text("Recruiter: anna@example.org") == "Recruiter: [email removed]"
 
 
-def test_company_and_source_upserts(tmp_path):
+def test_unmatched_public_board_does_not_create_a_legal_company_row(tmp_path):
     db = create_database(tmp_path / "jobs.db")
-    first = upsert_company(db, "greenhouse:acme", "Acme", None, "unmatched", "2026-11-23")
-    again = upsert_company(db, "greenhouse:acme", "Acme", None, "unmatched", "2026-11-24")
-    assert first == again
-    one = upsert_source(db, first, "Acme", "greenhouse", "acme", "2026-11-23")
-    two = upsert_source(db, first, "Acme", "greenhouse", "acme", "2026-11-24")
+    one = upsert_source(db, None, "Acme", "greenhouse", "acme", "unmatched", "2026-11-23")
+    two = upsert_source(db, None, "Acme", "greenhouse", "acme", "unmatched", "2026-11-24")
     assert one == two
+    assert db.execute("SELECT COUNT(*) FROM companies").fetchone()[0] == 0
     assert db.execute("SELECT COUNT(*) FROM ats_sources").fetchone()[0] == 1
+    assert db.execute("SELECT company_siren FROM ats_sources").fetchone()[0] is None
+    db.close()
+
+
+def test_only_active_diffusible_corporate_entities_enter_companies(tmp_path):
+    db = create_database(tmp_path / "jobs.db")
+    registry = {
+        "siren": "123456789", "nom_raison_sociale": "ACME",
+        "etat_administratif": "A", "nature_juridique": "5499",
+        "statut_diffusion": "O",
+        "siege": {"activite_principale": "62.01Z", "libelle_commune": "PARIS"},
+    }
+    siren = upsert_company(db, registry, "2026-11-23")
+    assert siren == "123456789"
+    with pytest.raises(ValueError):
+        upsert_company(db, {**registry, "nature_juridique": "1000"}, "2026-11-24")
+    with pytest.raises(ValueError):
+        upsert_company(db, {**registry, "etat_administratif": "C"}, "2026-11-24")
+    with pytest.raises(ValueError):
+        upsert_company(db, {**registry, "statut_diffusion": "P"}, "2026-11-24")
+    assert db.execute("SELECT COUNT(*) FROM companies").fetchone()[0] == 1
     db.close()
 
 
@@ -113,17 +132,18 @@ def test_same_siren_joins_multiple_ats_boards(tmp_path):
         "statut_diffusion": "O",
         "siege": {"activite_principale": "62.01Z", "libelle_commune": "PARIS"},
     }
-    first = upsert_company(db, "greenhouse:acme", "Acme", registry, "exact", "2026-11-23")
-    second = upsert_company(db, "ashby:acme", "Acme", registry, "exact", "2026-11-24")
-    assert first == second
+    siren = upsert_company(db, registry, "2026-11-23")
+    first = upsert_source(db, siren, "Acme", "greenhouse", "acme", "exact", "2026-11-23")
+    second = upsert_source(db, siren, "Acme", "ashby", "acme", "exact", "2026-11-24")
+    assert first != second
     assert db.execute("SELECT COUNT(*) FROM companies").fetchone()[0] == 1
+    assert db.execute("SELECT COUNT(*) FROM ats_sources WHERE company_siren='123456789'").fetchone()[0] == 2
     db.close()
 
 
 def test_successful_feed_expires_only_its_missing_jobs(tmp_path):
     db = create_database(tmp_path / "jobs.db")
-    company = upsert_company(db, "greenhouse:acme", "Acme", None, "unmatched", "2026-11-23")
-    source = upsert_source(db, company, "Acme", "greenhouse", "acme", "2026-11-23")
+    source = upsert_source(db, None, "Acme", "greenhouse", "acme", "unmatched", "2026-11-23")
     jobs = [
         {"external_id": "1", "title": "Engineer", "department": "Engineering",
          "location": "Paris, France", "city": "Paris", "apply_url": "https://boards.greenhouse.io/acme/jobs/1",
@@ -141,8 +161,7 @@ def test_successful_feed_expires_only_its_missing_jobs(tmp_path):
 
 def test_a_failed_feed_does_not_run_expiration_logic(tmp_path):
     db = create_database(tmp_path / "jobs.db")
-    company = upsert_company(db, "greenhouse:acme", "Acme", None, "unmatched", "2026-11-23")
-    source = upsert_source(db, company, "Acme", "greenhouse", "acme", "2026-11-23")
+    source = upsert_source(db, None, "Acme", "greenhouse", "acme", "unmatched", "2026-11-23")
     upsert_jobs_for_source(db, source, [{
         "external_id": "1", "title": "Engineer", "department": "Engineering",
         "location": "Paris, France", "city": "Paris",
@@ -179,6 +198,29 @@ def test_workday_board_urls_are_safe_and_well_formed():
         "workday", "https://sample.wd5.myworkdayjobs.com/wday/cxs/sample/Careers/jobs"
     ) is None
 
+
+
+
+def test_unmatched_jobs_are_still_exported_without_a_company_registry_record(tmp_path, monkeypatch):
+    from job_pipeline import export_active_jobs
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+    db = create_database(tmp_path / "jobs.db")
+    source = upsert_source(
+        db, None, "Sample Employer", "greenhouse", "sample-employer",
+        "unmatched", "2026-11-23"
+    )
+    upsert_jobs_for_source(db, source, [{
+        "external_id": "1", "title": "Account Executive", "department": "Sales",
+        "location": "Paris, France", "city": "Paris",
+        "apply_url": "https://boards.greenhouse.io/sample-employer/jobs/1",
+        "posted_at": None, "description": "", "remote": False,
+    }], "2026-11-23")
+    count = export_active_jobs(db, tmp_path / "exports")
+    exported = json.loads((tmp_path / "exports/active_jobs.json").read_text())
+    assert count == 1
+    assert exported["jobs"][0]["siren"] is None
+    assert exported["jobs"][0]["company_registry_verified"] is False
+    db.close()
 
 def test_workday_job_postings_are_flattened_for_france_filtering():
     from job_pipeline import _job_rows, job_is_in_france
