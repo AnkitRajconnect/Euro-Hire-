@@ -450,3 +450,44 @@ def test_upsert_keeps_unmatched_observed_names_when_registry_match_arrives(tmp_p
     assert json.loads(row["observed_names_json"])[0]["value"] == "Maison du Sport"
     assert json.loads(row["matched_names_json"])[0]["registry_id"] == "123456789"
     con.close()
+
+
+def test_one_domain_check_is_reused_for_duplicate_place_records(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = add_company_and_candidate(db)
+    _upsert_candidate(
+        con,
+        place_id="overture-place-duplicate",
+        place_name="Autre enseigne",
+        website_url="https://candidate.fr/",
+        domain="candidate.fr",
+        normalized_name="autre enseigne",
+        registry_ids=["123456789"],
+        match_method="exact_establishment_alias",
+        address="1 Rue Exemple",
+        locality="Paris",
+        postcode="75001",
+        region="Île-de-France",
+        confidence=0.9,
+        release="2026-11-18.0",
+        observed_names=[{"value": "Autre enseigne", "language": "fr"}],
+    )
+    con.commit()
+    http = FakeHttp({
+        "https://candidate.fr/": '<a href="/mentions-legales">Mentions légales</a>',
+        "https://candidate.fr/mentions-legales": "<p>SIREN : 123 456 789</p>",
+    })
+
+    report = verify_pending_candidates(con, http, limit=10)
+    candidates = con.execute(
+        "SELECT status FROM france_website_candidates ORDER BY id"
+    ).fetchall()
+
+    assert report["checked"] == 1
+    assert report["unique_domains_checked"] == 1
+    assert len(http.visited) == 2
+    assert [row["status"] for row in candidates] == [
+        "verified_siren_match",
+        "verified_siren_match",
+    ]
+    con.close()
