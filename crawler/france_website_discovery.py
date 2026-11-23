@@ -613,7 +613,7 @@ def ingest_overture_release(con, release: str) -> dict:
         "candidate_rows_written_or_updated": candidate_domains,
         "invalid_or_non_company_urls": invalid_urls,
         "registry_name_keys": len(name_index),
-        "matched_name_language_counts": matched_name_languages,
+        "observed_name_language_counts": matched_name_languages,
     }
 
 
@@ -1056,20 +1056,26 @@ def build_report(con, release: str, ingest: dict | None, verification: dict,
     ).fetchone()[0]
     provider_counts: dict[str, int] = {}
     language_counts: dict[str, int] = {}
+    registry_match_language_counts: dict[str, int] = {}
     match_method_counts: dict[str, int] = {}
     candidates = con.execute(
-        "SELECT match_method,matched_names_json,source_evidence_json FROM france_website_candidates"
+        "SELECT match_method,matched_names_json,observed_names_json,source_evidence_json "
+        "FROM france_website_candidates"
     ).fetchall()
     for row in candidates:
         method = str(row["match_method"] or "unknown")
         match_method_counts[method] = match_method_counts.get(method, 0) + 1
-        try:
-            names = json.loads(row["matched_names_json"] or "[]")
-        except (TypeError, ValueError):
-            names = []
-        for name in names if isinstance(names, list) else []:
-            language = str(name.get("language") or "unspecified").lower()
-            language_counts[language] = language_counts.get(language, 0) + 1
+        for source_json, target in (
+            (row["observed_names_json"], language_counts),
+            (row["matched_names_json"], registry_match_language_counts),
+        ):
+            try:
+                names = json.loads(source_json or "[]")
+            except (TypeError, ValueError):
+                names = []
+            for name in names if isinstance(names, list) else []:
+                language = str(name.get("language") or "unspecified").lower()
+                target[language] = target.get(language, 0) + 1
         try:
             evidence = json.loads(row["source_evidence_json"] or "[]")
         except (TypeError, ValueError):
@@ -1095,7 +1101,8 @@ def build_report(con, release: str, ingest: dict | None, verification: dict,
         "website_candidate_rows": sum(statuses.values()),
         "candidate_status_counts": statuses,
         "discovery_source_candidate_counts": provider_counts,
-        "matched_name_language_counts": language_counts,
+        "observed_name_language_counts": language_counts,
+        "registry_matched_name_language_counts": registry_match_language_counts,
         "candidate_match_method_counts": match_method_counts,
         "establishment_alias_rows": alias_count,
         "latest_overture_ingest": ingest or {"skipped": True, "reason": "No new Overture release was imported"},
@@ -1111,7 +1118,7 @@ def export_verified_websites(con, output: Path) -> int:
                   c.domain_checked_at,c.registry_source,c.raw_json,
                   w.source_record_ids_json,w.source_release,w.address,w.locality,
                   w.postcode,w.region,w.verification_note,w.verified_legal_notice_url,
-                  w.matched_names_json,w.source_evidence_json,w.place_category
+                  w.matched_names_json,w.observed_names_json,w.source_evidence_json,w.place_category
            FROM companies c
            JOIN france_website_candidates w
              ON w.candidate_domain=c.official_domain
@@ -1141,6 +1148,10 @@ def export_verified_websites(con, output: Path) -> int:
         except (TypeError, ValueError):
             matched_names = []
         try:
+            observed_names = json.loads(row["observed_names_json"] or "[]")
+        except (TypeError, ValueError):
+            observed_names = []
+        try:
             source_evidence = json.loads(row["source_evidence_json"] or "[]")
         except (TypeError, ValueError):
             source_evidence = []
@@ -1161,6 +1172,7 @@ def export_verified_websites(con, output: Path) -> int:
             "verification_method": "Matching SIREN/SIRET found in first-party French legal notice",
             "place_category": row["place_category"],
             "matched_names": matched_names,
+            "observed_name_variants": observed_names,
             "evidence": {
                 "discovery_sources": source_evidence,
                 "source_release": row["source_release"],
