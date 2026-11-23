@@ -1212,16 +1212,13 @@ def export_verified_websites(con, output: Path) -> int:
                   c.domain_checked_at,c.registry_source,c.raw_json,
                   w.source_record_ids_json,w.source_release,w.address,w.locality,
                   w.postcode,w.region,w.verification_note,w.verified_legal_notice_url,
-                  w.matched_names_json,w.observed_names_json,w.source_evidence_json,w.place_category
+                  w.matched_names_json,w.observed_names_json,w.source_evidence_json,w.place_category,
+                  w.verified_registry_id
            FROM companies c
            JOIN france_website_candidates w
              ON w.candidate_domain=c.official_domain
             AND w.status='verified_siren_match'
-            AND json_valid(w.candidate_registry_ids_json)
-            AND EXISTS (
-              SELECT 1 FROM json_each(w.candidate_registry_ids_json) j
-              WHERE CAST(j.value AS TEXT)=c.registry_id
-            )
+            AND w.verified_registry_id=c.registry_id
            WHERE c.country='FR' AND c.registry_status='active'
              AND c.legal_person=1 AND c.domain_verified=1
              AND c.domain_method='siren_in_legal_notice'
@@ -1264,6 +1261,7 @@ def export_verified_websites(con, output: Path) -> int:
             "employee_range": raw.get("employee_range"),
             "verified_at": row["domain_checked_at"],
             "verification_method": "Matching SIREN/SIRET found in first-party French legal notice",
+            "verified_registry_id": row["verified_registry_id"],
             "place_category": row["place_category"],
             "matched_names": matched_names,
             "observed_name_variants": observed_names,
