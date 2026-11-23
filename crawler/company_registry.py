@@ -137,7 +137,15 @@ def upsert_candidate(con: sqlite3.Connection, *, country: str, registry_id: str,
             merged_raw = json.loads(existing["raw_json"])
         except (TypeError, ValueError):
             merged_raw = {}
-    merged_raw.update(raw or {})
+    for key, value in (raw or {}).items():
+        # A targeted API response may omit statistical headcount. Do not erase
+        # a previously imported SIRENE employee band merely because this
+        # endpoint returned no value; an explicit NN band can still replace it.
+        if key in {"employee_range", "employee_range_date"} and value in (None, ""):
+            continue
+        if key == "employer_scope" and value == "unknown" and merged_raw.get("employer_scope") == "employer":
+            continue
+        merged_raw[key] = value
     domain_changed = bool(existing and official_domain and existing["official_domain"] and
                           official_domain != existing["official_domain"])
     def name_key(value: str) -> str:
