@@ -476,8 +476,16 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
         "SELECT last_candidate_id FROM france_website_verification_cursor WHERE queue_name='FR_WEBSITES'"
     ).fetchone()
     last_id = int(state["last_candidate_id"]) if state else 0
-    due = """status IN ('pending_verification','unreachable_retry','robots_disallowed','legal_notice_not_found')
-             AND (last_checked_at IS NULL OR last_checked_at <= datetime('now','-30 day'))"""
+    due = """(
+             (status IN ('pending_verification','unreachable_retry','robots_disallowed',
+                         'legal_notice_not_found','needs_manual_review')
+              AND (last_checked_at IS NULL OR date(substr(last_checked_at,1,10)) <= date('now','-30 day')))
+             OR
+             (status IN ('verified_siren_match','legal_identifier_mismatch',
+                         'verified_alternative_domain_needs_review')
+              AND last_checked_at IS NOT NULL
+              AND date(substr(last_checked_at,1,10)) <= date('now','-90 day'))
+           )"""
     rows = con.execute(
         f"""SELECT * FROM france_website_candidates WHERE {due} AND id>?
             ORDER BY id LIMIT ?""", (last_id, limit)
@@ -493,6 +501,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
     cursor_id = last_id
     for row in rows:
         cursor_id = int(row["id"])
+        previous_status = row["status"]
         status, note, matched_siren = _verify_one(http, row)
         checked += 1
         if status == "verified_siren_match":
@@ -524,6 +533,31 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
             review += 1
         else:
             failed += 1
+
+        # Re-check previously approved domains every 90 days. If the legal
+        # notice no longer proves the same company, revoke this automated
+        # verification and invalidate career-source approvals tied to it.
+        if previous_status == "verified_siren_match" and status != "verified_siren_match":
+            old_company = con.execute(
+                """SELECT id FROM companies
+                   WHERE country='FR' AND official_domain=? AND domain_method='siren_in_legal_notice'""",
+                (row["candidate_domain"],),
+            ).fetchall()
+            for old in old_company:
+                con.execute(
+                    """UPDATE companies SET domain_verified=0,domain_method=NULL,
+                       domain_checked_at=NULL,career_discovery_checked_at=NULL,
+                       career_discovery_attempted_at=NULL,career_discovery_status='domain_verification_lost',
+                       updated_at=? WHERE id=?""",
+                    (now_iso(), old["id"]),
+                )
+                con.execute(
+                    """UPDATE career_sources SET approved=0,approval_method=NULL,approved_at=NULL,
+                       last_checked=?,last_status='company_domain_verification_lost'
+                       WHERE company_id=?""",
+                    (now_iso(), old["id"]),
+                )
+
         con.execute(
             """UPDATE france_website_candidates
                SET status=?,last_checked_at=?,attempt_count=attempt_count+1,verification_note=?
