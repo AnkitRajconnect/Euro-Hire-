@@ -257,13 +257,12 @@ def test_france_employer_scope_uses_sirene_employee_bands():
 
 def test_france_stock_import_records_employer_scope_and_requires_employee_field(tmp_path):
     csv_file = tmp_path / "fr.csv"
-    csv_file.write_text(
-        "siren;name;status;form;effectif;diffusion\\n"
-        "123456789;Employeur SAS;A;5710;11;O\\n"
-        "234567890;No employee SAS;A;5710;NN;O\\n"
-        "345678901;Unknown count SAS;A;5710;;O\\n",
-        encoding="utf-8",
-    )
+    csv_file.write_text("\n".join([
+        "siren;name;status;form;effectif;diffusion",
+        "123456789;Employeur SAS;A;5710;11;O",
+        "234567890;No employee SAS;A;5710;NN;O",
+        "345678901;Unknown count SAS;A;5710;;O",
+    ]) + "\n", encoding="utf-8")
     mapping = {
         "number_column": "siren", "name_column": "name", "status_column": "status",
         "active_values": ["A"], "inactive_values": ["C"], "legal_form_column": "form",
