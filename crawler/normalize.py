@@ -159,8 +159,19 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         place = geo.locate(title)
         locations = geo.locate_all(title)
 
-    # France-only launch policy: never publish a job located in another country.
+    # France-only launch policy: every explicitly listed location must be in France.
     if place is not None and place["country"] != "FR":
+        return None
+    if any(item.get("country") != "FR" for item in locations):
+        return None
+    # A remote label does not override an explicit non-France location restriction.
+    location_blob = f"{loc_text} {raw.get('country_text') or ''}"
+    explicit_non_france = bool(US_RE.search(location_blob) or NON_EUROPE_RE.search(location_blob))
+    for country_rx, country_code in geo._COUNTRY_INDEX:
+        if country_code != "FR" and country_rx.search(geo._norm(location_blob)):
+            explicit_non_france = True
+            break
+    if explicit_non_france:
         return None
     if place is None:
         if not remote:
@@ -168,7 +179,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         verification = company.get("verification") or {}
         registry_country = ((verification.get("registry") or {}).get("country") or "").upper()
         france_signal = hint == "FR" or registry_country == "FR" or company.get("hq") == "FR" or bool(
-            re.search(r"\bfrance\b", f"{blob} {raw.get('country_text') or ''}", re.I)
+            re.search(r"\bfrance\b", location_blob, re.I)
         )
         # Generic remote postings are only eligible when the employer itself is
         # registered in France; "Europe", "EMEA" and worldwide remote are not enough.
