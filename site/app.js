@@ -432,12 +432,8 @@
   }
 
   function fillControls() {
-    const countries = [...new Set(jobs.map((job) => job.country).filter(Boolean))]
-      .sort((a, b) => countryName(a).localeCompare(countryName(b)));
-    for (const code of countries) {
-      const number = jobs.filter((job) => job.country === code).length;
-      $("country").append(element("option", { value: code, text: `${countryName(code)} (${number})` }));
-    }
+    const franceJobs = jobs.filter((job) => job.country === "FR").length;
+    $("country").replaceChildren(element("option", { value: "FR", text: `France (${franceJobs})` }));
     for (const role of [...ROLES, "other"]) {
       $("role").append(element("option", { value: role, text: ROLE_LABEL[role] || "Other" }));
     }
