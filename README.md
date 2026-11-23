@@ -1,6 +1,6 @@
-# Euro-Hire France
+# Euro-Hire Europe
 
-A France-first job index built from public applicant-tracking-system career boards. The pipeline discovers ATS boards first, reads current vacancies, keeps roles actually based in France, and then matches the hiring company against the French public Recherche d'Entreprises API to add SIREN and NAF activity codes.
+A Europe-wide job index built from public applicant-tracking-system career boards. The pipeline discovers ATS boards first, reads current vacancies, keeps professional roles based in Europe, and then matches the hiring company against the French public Recherche d'Entreprises API to add SIREN and NAF activity codes.
 
 ## Why ATS-first
 
@@ -13,11 +13,11 @@ The crawler does not start from millions of registered businesses. It starts wit
 3. Add discovered board IDs to data/jobs.db.
 4. Probe each board through its public, unauthenticated listing endpoint.
 5. Keep only jobs with clear France evidence: ISO country code FR, France in the location, or a recognised French city or region.
-6. Create company rows only after a board has at least one French vacancy. Then search the public French Recherche d'Entreprises API and store a high-confidence SIREN and NAF match.
+6. Create company rows only after a board has at least one European vacancy. Then search the public French Recherche d'Entreprises API and store a high-confidence SIREN and NAF match.
 
 ### Daily sync
 
-The daily workflow revisits only ATS boards that have already produced French vacancies. A missing job is expired only after that board returns a complete, successful response. A failed feed does not close jobs. Welcome to the Jungle is queried as a separate, France-filtered public search index; its complete result must succeed before old WTTJ listings are expired.
+The 10-minute workflow revisits only ATS boards that have already produced European vacancies. A missing job is expired only after that board returns a complete, successful response. A failed feed does not close jobs. Welcome to the Jungle is queried as a separate, Europe-filtered public search index; its complete result must succeed before old WTTJ listings are expired.
 
 ## Public ATS sources
 
@@ -31,8 +31,8 @@ The daily workflow revisits only ATS boards that have already produced French va
 | Teamtailor | Public RSS careers feed | Included |
 | Breezy HR | Public careers JSON | Included |
 | Taleez | Public careers-site JSON route | Experimental; separate from the official API, which requires a public key |
-| Welcome to the Jungle | Public frontend search index, country-filtered to France | Experimental; not a documented third-party API |
-| SmartRecruiters | Public postings API, filtered to France | Included behind a live robots.txt permission check; skipped whenever the API host disallows the endpoint |
+| Welcome to the Jungle | Public frontend search index, country-filtered to European countries | Experimental; not a documented third-party API |
+| SmartRecruiters | Public postings API, filtered to European countries | Included behind a live robots.txt permission check; skipped whenever the API host disallows the endpoint |
 
 Personio's historical tenant robots policy disallows its XML feed, so it is also excluded. A provider being popular in Europe does not make every endpoint free or permitted. This project does not use private recruiter APIs, employer tokens, paid job-data APIs, applicant records, personal emails or phone numbers.
 
@@ -40,7 +40,7 @@ The source index is not a promise to support every ATS that exists. Only provide
 
 ## INSEE enrichment
 
-After a company has produced a French vacancy, Euro-Hire searches the public API:
+After a company has produced a European vacancy, Euro-Hire searches the public API:
 
 https://recherche-entreprises.api.gouv.fr/search
 
@@ -65,8 +65,8 @@ Job rows contain public vacancy details and direct application links. They do no
     python discover_companies.py
     python sync_jobs.py
 
-The first discovery run takes longer because it seeds the ATS index and harvests Common Crawl. Daily sync then checks only discovered boards that have already yielded French vacancies. Both scripts can be run manually from GitHub Actions.
+The first discovery run takes longer because it seeds the ATS index and harvests Common Crawl. The 10-minute sync rotates through discovered boards that have yielded European vacancies. Both scripts can be run manually from GitHub Actions.
 
 ## Limitations
 
-Common Crawl is an archive of pages it has previously indexed, not a complete directory of every ATS customer. The public token snapshot is dated and used only as a source of candidate board IDs. A candidate is not a company record until its live feed returns jobs in France. New, custom-domain, blocked or unindexed boards can be missed. WTTJ's public frontend search implementation may change without notice. No public pipeline can honestly guarantee every French job or every ATS customer.
+Common Crawl is an archive of pages it has previously indexed, not a complete directory of every ATS customer. The public token snapshot is dated and used only as a source of candidate board IDs. A candidate is not a company record until its live feed returns jobs in Europe. New, custom-domain, blocked or unindexed boards can be missed. WTTJ's public frontend search implementation may change without notice. No public pipeline can honestly guarantee every European job or every ATS customer.
