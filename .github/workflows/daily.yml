@@ -13,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: gullyhire-live-pipeline
+  group: eurohire-france-registry-jobs-v2
   cancel-in-progress: false
 
 jobs:
@@ -45,15 +45,6 @@ jobs:
 
       - name: Sync the official French SIRENE company register
         run: python -m crawler.france_registry_sync --db data/company_registry.sqlite3
-
-      - name: Discover French legal entities from the official company-search API
-        run: >-
-          python -m crawler.france_discovery
-          --db data/company_registry.sqlite3
-          --limit 5000
-          --pages-per-query 1
-          --max-queries 6
-          --output /tmp/france-discovery-report.json
 
       - name: Save the updated France company registry cache
         uses: actions/cache/save@v4
@@ -106,15 +97,6 @@ jobs:
         with:
           name: gullyhire-review-queue
           path: /tmp/gullyhire-review-queue.json
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Keep official French company-discovery report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: france-company-discovery-report
-          path: /tmp/france-discovery-report.json
           if-no-files-found: ignore
           retention-days: 7
 
