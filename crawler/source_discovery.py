@@ -149,7 +149,7 @@ def refresh_index(out_path: Path, max_per_pattern: int = 10000,
             body = http.get_text(index_url, params=[
                 ("url", pattern), ("output", "json"), ("filter", "status:200"),
                 ("filter", f"~url:{url_regex}"), ("collapse", "urlkey"),
-                ("limit", str(max(1, min(max_per_pattern, 10000))),
+                ("limit", str(max(1, min(max_per_pattern, 10000)))),
             ])
             found = 0
             for line in body.splitlines():

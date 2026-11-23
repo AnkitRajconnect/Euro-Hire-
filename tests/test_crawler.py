@@ -39,17 +39,15 @@ def co(ats="greenhouse", slug="acme", hq="DE", **kw):
         "ashby": f"https://jobs.ashbyhq.com/{slug}",
         "workable": f"https://apply.workable.com/{slug}",
     }[ats]
-    careers = "https://acme.example/careers"
-    checked = datetime.now(timezone.utc).date().isoformat()
-    verification = {
-        "mode": "curated_public_ats", "status": "approved",
-        "domain": {"url": "https://acme.example", "verified": True, "method": "public_ats_board_review"},
-        "source": {"approved": True, "verified": True, "method": "public_ats_board_review",
-                   "career_url": board, "evidence_url": careers, "checked_at": checked},
+    return {
+        "name": "Acme", "slug": slug, "ats_slug": slug, "ats": ats, "hq": hq,
+        "company_key": f"{ats}:{slug}", "board_url": board,
+        "verification": {
+            "mode": "discovered_public_ats", "status": "approved",
+            "source": {"board_url": board, "discovery_source": "Common Crawl"},
+        },
+        **kw,
     }
-    return {"name": "Acme", "slug": slug, "ats_slug": slug, "ats": ats, "hq": hq,
-            "official_domain": "acme.example", "official_careers_url": careers,
-            "career_url": board, "verification": verification, **kw}
 
 
 def test_europe_geography_and_map_region():
@@ -123,7 +121,7 @@ def test_reviewed_source_and_vacancy_url_gates():
     assert is_company_approved(company) == (True, None)
     assert validate_vacancy_source("https://boards.greenhouse.io/acme/jobs/12", company)[0] is True
     assert validate_vacancy_source("https://boards.greenhouse.io/acme-imposter/jobs/12", company)[0] is False
-    company["verification"]["source"]["approved"] = False
+    company["verification"]["status"] = "blocked"
     assert not is_company_approved(company)[0]
 
 
@@ -139,11 +137,17 @@ def test_scam_and_manual_trade_checks():
     assert screen_vacancy(raw, company)[0] == "review"
 
 
-def test_crawler_uses_companies_yaml_only():
-    companies = load_companies(Path("companies.yaml"))
-    assert len(companies) == 7
-    assert {company["ats"] for company in companies} == {"lever", "ashby", "workable", "greenhouse"}
+def test_crawler_uses_generated_board_index_not_company_allowlist(tmp_path):
+    board_path = tmp_path / "boards.json"
+    board_path.write_text(json.dumps({
+        "source": "Common Crawl",
+        "boards": [co(), co("ashby", "another-employer")],
+    }), encoding="utf-8")
+    companies = load_companies(board_path)
+    assert len(companies) == 2
+    assert {company["ats"] for company in companies} == {"greenhouse", "ashby"}
     assert all(is_company_approved(company)[0] for company in companies)
+    assert not Path("companies.yaml").exists()
 
 
 def test_feed_failures_are_isolated_and_jobs_expire():
