@@ -135,7 +135,7 @@ def classify(title: str, department: str | None):
 
 
 def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
-    """Return a final job dict, or None if the job is not in/for Europe."""
+    """Return a final job dict only for opportunities located in France."""
     title = (raw.get("title") or "").strip()
     url = (raw.get("url") or "").strip()
     if not title or not url.startswith("http"):
@@ -159,19 +159,21 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         place = geo.locate(title)
         locations = geo.locate_all(title)
 
-    in_europe = place is not None and place["country"] in geo.EUROPE
-    if not in_europe:
+    # France-only launch policy: never publish a job located in another country.
+    if place is not None and place["country"] != "FR":
+        return None
+    if place is None:
         if not remote:
             return None
-        europe_signal = bool(EUROPE_REMOTE_RE.search(blob))
-        non_europe_signal = bool(NON_EUROPE_RE.search(blob) or US_RE.search(blob))
-        if non_europe_signal and not europe_signal:
+        verification = company.get("verification") or {}
+        registry_country = ((verification.get("registry") or {}).get("country") or "").upper()
+        france_signal = hint == "FR" or registry_country == "FR" or company.get("hq") == "FR" or bool(
+            re.search(r"\\bfrance\\b", f"{blob} {raw.get('country_text') or ''}", re.I)
+        )
+        # Generic remote postings are only eligible when the employer itself is
+        # registered in France; "Europe", "EMEA" and worldwide remote are not enough.
+        if not france_signal:
             return None
-        generic = not loc_text or loc_text.lower().strip(" .") in ("remote", "anywhere", "worldwide", "global")
-        europe_first = company.get("europe_first", company.get("hq") in geo.EUROPE)
-        if not (europe_signal or (generic and europe_first)):
-            return None
-        place = None
 
     role, level = classify(title, raw.get("department"))
     # Keep legitimate professional roles even when the title is not covered by
@@ -197,7 +199,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         "url": url,
         "location": loc_text or ("Remote" if remote else ""),
         "city": place["city"] if place else None,
-        "country": place["country"] if place else None,
+        "country": place["country"] if place else ("FR" if remote else None),
         "locations": locations,
         "lat": place["lat"] if place else None,
         "lon": place["lon"] if place else None,
