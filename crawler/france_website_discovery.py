@@ -830,7 +830,7 @@ def ingest_french_tech_next40_120(con, http: Http) -> dict:
     skipped = 0
     cohort_release = "french-tech-next40-120-current"
     for href, label in parser.links:
-        name = re.sub(r"\\s+", " ", html.unescape(label or "")).strip()
+        name = re.sub(r"\s+", " ", html.unescape(label or "")).strip()
         if len(name) < 2 or name.casefold() in {
             "see all laureates", "see all winners", "learn more", "read more",
         }:
