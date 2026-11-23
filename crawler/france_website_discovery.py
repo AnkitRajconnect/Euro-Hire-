@@ -23,6 +23,8 @@ from .france_establishment_aliases import SCHEMA as ESTABLISHMENT_ALIAS_SCHEMA, 
 
 STAC_CATALOG = "https://stac.overturemaps.org/catalog.json"
 OVERTURE_S3 = "s3://overturemaps-us-west-2/release/{release}/theme=places/type=place/*.parquet"
+WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+WIKIDATA_PAGE_SIZE = 200
 RELEASE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.\d+$")
 BATCH_SIZE = 2500
 
@@ -72,6 +74,9 @@ CREATE TABLE IF NOT EXISTS france_website_candidates (
   matched_company_count INTEGER NOT NULL,
   match_method TEXT NOT NULL,
   match_score REAL NOT NULL,
+  matched_names_json TEXT NOT NULL DEFAULT '[]',
+  source_evidence_json TEXT NOT NULL DEFAULT '[]',
+  place_category TEXT,
   address TEXT,
   locality TEXT,
   postcode TEXT,
@@ -100,6 +105,104 @@ CREATE TABLE IF NOT EXISTS france_website_verification_cursor (
   updated_at TEXT NOT NULL
 );
 """
+
+
+def ensure_discovery_schema(con) -> None:
+    """Create and migrate the persistent website-candidate evidence tables."""
+    con.executescript(SCHEMA)
+    columns = {row["name"] for row in con.execute("PRAGMA table_info(france_website_candidates)")}
+    migrations = {
+        "matched_names_json": "TEXT NOT NULL DEFAULT '[]'",
+        "source_evidence_json": "TEXT NOT NULL DEFAULT '[]'",
+        "place_category": "TEXT",
+        "verified_legal_notice_url": "TEXT",
+    }
+    for name, declaration in migrations.items():
+        if name not in columns:
+            con.execute(f"ALTER TABLE france_website_candidates ADD COLUMN {name} {declaration}")
+    con.commit()
+
+
+def _decode_json_value(value):
+    if isinstance(value, (dict, list)):
+        return value
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def extract_overture_name_variants(names_json, brand_names_json=None, *, prefix="place") -> list[dict]:
+    """Extract primary, French common, and language-tagged Overture name variants."""
+    variants: list[dict] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    def add(value, *, source: str, language: str | None = None, variant: str = "primary"):
+        if not isinstance(value, str):
+            return
+        value = value.strip()
+        if len(value) < 2:
+            return
+        key = (value.casefold(), (language or "").casefold(), variant)
+        if key in seen:
+            return
+        seen.add(key)
+        variants.append({
+            "value": value,
+            "language": language,
+            "variant": variant,
+            "source_field": source,
+        })
+
+    for payload_value, source_prefix in (
+        (names_json, f"{prefix}.names"),
+        (brand_names_json, f"{prefix}.brand.names"),
+    ):
+        payload = _decode_json_value(payload_value)
+        if not isinstance(payload, dict):
+            continue
+        add(payload.get("primary"), source=f"{source_prefix}.primary", variant="primary")
+
+        common = payload.get("common")
+        if isinstance(common, dict):
+            for language, values in common.items():
+                if isinstance(values, str):
+                    add(values, source=f"{source_prefix}.common", language=str(language), variant="common")
+                elif isinstance(values, list):
+                    for value in values:
+                        add(value, source=f"{source_prefix}.common", language=str(language), variant="common")
+
+        rules = payload.get("rules")
+        if isinstance(rules, list):
+            for rule in rules:
+                if not isinstance(rule, dict):
+                    continue
+                add(
+                    rule.get("value"),
+                    source=f"{source_prefix}.rules",
+                    language=rule.get("language"),
+                    variant=str(rule.get("variant") or "alternate"),
+                )
+
+    return variants
+
+
+def extract_overture_source_evidence(sources_json) -> list[dict]:
+    """Keep provider and provenance details for each Overture website candidate."""
+    sources = _decode_json_value(sources_json)
+    if not isinstance(sources, list):
+        return []
+    fields = ("property", "dataset", "license", "record_id", "update_time",
+              "confidence", "provider", "resource", "version")
+    result = []
+    for source in sources:
+        if isinstance(source, dict):
+            item = {key: source.get(key) for key in fields if source.get(key) not in (None, "")}
+            if item:
+                result.append(item)
+    return result
 
 
 def _unaccent(value: str) -> str:
@@ -236,14 +339,31 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                       domain: str, normalized_name: str, registry_ids: list[str],
                       match_method: str, address: str | None, locality: str | None,
                       postcode: str | None, region: str | None, confidence: float | None,
-                      release: str) -> None:
+                      release: str, matched_names: list[dict] | None = None,
+                      source_evidence: list[dict] | None = None,
+                      place_category: str | None = None) -> None:
+    """Persist a discovered website and its source evidence without approving it."""
     now = now_iso()
     existing = con.execute(
         """SELECT id,source_record_ids_json,candidate_registry_ids_json,status,
-                  confidence,match_score FROM france_website_candidates
+                  matched_names_json,source_evidence_json
+           FROM france_website_candidates
            WHERE candidate_domain=? AND normalized_name=?""",
         (domain, normalized_name),
     ).fetchone()
+
+    def merge_json_list(previous, incoming):
+        try:
+            values = json.loads(previous or "[]")
+        except (TypeError, ValueError):
+            values = []
+        if not isinstance(values, list):
+            values = []
+        indexed = {json.dumps(item, ensure_ascii=False, sort_keys=True): item for item in values}
+        for item in incoming or []:
+            indexed[json.dumps(item, ensure_ascii=False, sort_keys=True)] = item
+        return list(indexed.values())
+
     if existing:
         try:
             source_ids = json.loads(existing["source_record_ids_json"] or "[]")
@@ -261,6 +381,8 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
             "verified_siren_match", "verified_alternative_domain_needs_review"
         }
         next_status = "pending_verification" if requeue else existing["status"]
+        merged_names = merge_json_list(existing["matched_names_json"], matched_names)
+        merged_sources = merge_json_list(existing["source_evidence_json"], source_evidence)
         con.execute(
             """UPDATE france_website_candidates
                SET candidate_url=?, source_record_ids_json=?, candidate_registry_ids_json=?,
@@ -270,6 +392,8 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                    address=COALESCE(address, ?), locality=COALESCE(locality, ?),
                    postcode=COALESCE(postcode, ?), region=COALESCE(region, ?),
                    match_method=CASE WHEN match_method='exact_trading_name' THEN ? ELSE match_method END,
+                   matched_names_json=?, source_evidence_json=?,
+                   place_category=COALESCE(place_category, ?),
                    status=?,
                    last_checked_at=CASE WHEN ? THEN NULL ELSE last_checked_at END,
                    verification_note=CASE WHEN ? THEN NULL ELSE verification_note END,
@@ -277,20 +401,26 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                WHERE id=?""",
             (website_url, json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids), now,
              release, confidence, confidence, confidence, address, locality, postcode,
-             region, match_method, next_status, int(requeue), int(requeue), int(requeue), existing["id"]),
+             region, match_method, json.dumps(merged_names, ensure_ascii=False),
+             json.dumps(merged_sources, ensure_ascii=False), place_category, next_status,
+             int(requeue), int(requeue), int(requeue), existing["id"]),
         )
         return
+
     con.execute(
         """INSERT INTO france_website_candidates
            (candidate_domain,candidate_url,normalized_name,place_name,source_record_ids_json,
             candidate_registry_ids_json,matched_company_count,match_method,match_score,
+            matched_names_json,source_evidence_json,place_category,
             address,locality,postcode,region,confidence,source_release,status,
             first_seen_at,last_seen_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (domain, website_url, normalized_name, place_name,
          json.dumps([place_id]), json.dumps(sorted(set(registry_ids))), len(set(registry_ids)),
          match_method, 100.0 if len(set(registry_ids)) == 1 else 75.0,
-         address, locality, postcode, region, confidence, release,
+         json.dumps(matched_names or [], ensure_ascii=False),
+         json.dumps(source_evidence or [], ensure_ascii=False),
+         place_category, address, locality, postcode, region, confidence, release,
          "pending_verification", now, now),
     )
 
