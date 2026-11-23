@@ -122,7 +122,7 @@ def _latest_collection(http: Http) -> dict:
 def refresh_index(out_path: Path, max_per_pattern: int = 10000,
                   refresh_days: int = 7, force: bool = False) -> dict:
     # Common Crawl asks clients to sleep between index calls and not parallelise.
-    http = Http(min_delay=2.0, timeout=60, retries=2)
+    http = Http(min_delay=2.0, timeout=25, retries=1)
     latest = _latest_collection(http)
     collection_id = latest["id"]
 
