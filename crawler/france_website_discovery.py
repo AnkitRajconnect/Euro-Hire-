@@ -949,7 +949,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
             SELECT * FROM (
               SELECT w.*,
                      ROW_NUMBER() OVER (
-                       PARTITION BY w.candidate_domain,w.candidate_registry_ids_json
+                       PARTITION BY w.candidate_domain
                        ORDER BY CASE WHEN w.status='verified_siren_match' THEN 0 ELSE 1 END, w.id
                      ) AS domain_rank
               FROM france_website_candidates w
@@ -963,12 +963,9 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
 
     rows = select_unique_rows(">", last_id, limit)
     if len(rows) < limit and last_id:
-        already = {(row["candidate_domain"], row["candidate_registry_ids_json"]) for row in rows}
+        already = {row["candidate_domain"] for row in rows}
         wrapped = select_unique_rows("<=", last_id, limit - len(rows))
-        rows.extend(
-            row for row in wrapped
-            if (row["candidate_domain"], row["candidate_registry_ids_json"]) not in already
-        )
+        rows.extend(row for row in wrapped if row["candidate_domain"] not in already)
 
     if isinstance(http, Http):
         def check_row(row):
