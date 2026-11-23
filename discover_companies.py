@@ -199,7 +199,7 @@ async def harvest_common_crawl(client, tokens, max_crawls):
         for provider, config in PROVIDERS.items():
             for host, mode in config["hosts"]:
                 reverse = ",".join(reversed(host.split(".")))
-                prefix = reverse + ("," if mode == "subdomain" else ")/")
+                prefix = reverse + ("," if mode in {"subdomain", "workday"} else ")/")
                 try:
                     blocks = await blocks_for_prefix(client, index_url, size, prefix)
                     added = 0

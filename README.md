@@ -42,10 +42,11 @@ These are anonymous public job-board reads, not private recruiting APIs:
 | Pinpoint | Public postings.json | Documented public jobs endpoint |
 | BambooHR | Public careers list | Employer-hosted career-board endpoint |
 | Rippling | Public hosted-board jobs feed | No private Recruiting API credentials |
+| Workday | Public career-site search endpoint | Tenant robots.txt checked before each board is read |
 
 SmartRecruiters and Personio are deliberately excluded. Independent live and archived robots checks found the relevant public feed paths disallowed. Private ATS APIs, paid data providers, employer account tokens, OAuth and candidate-management endpoints are not used.
 
-The upstream open-ats-feed snapshot is a candidate source only. Its board slugs and counts are re-verified against live feeds and are not copied into Euro-Hire source code. Attribution and the upstream MIT licence are retained here: https://github.com/veresk06/open-ats-feed/blob/main/LICENSE.
+Workday's endpoint is an undocumented public career-site endpoint, not a private HCM API. It is only called after the exact tenant robots.txt path has been checked and allowed. The upstream open-ats-feed snapshot is a candidate source only. Its board slugs and counts are re-verified against live feeds and are not copied into Euro-Hire source code. Attribution and the upstream MIT licence are retained here: https://github.com/veresk06/open-ats-feed/blob/main/LICENSE.
 
 ## French government data and privacy
 

@@ -14,6 +14,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlparse
+from urllib.robotparser import RobotFileParser
 
 import feedparser
 import httpx
@@ -41,6 +42,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     "pinpoint": {"hosts": [("pinpointhq.com", "subdomain")], "concurrency": 8, "interval": 0.12},
     "bamboohr": {"hosts": [("bamboohr.com", "subdomain")], "concurrency": 8, "interval": 0.12},
     "rippling": {"hosts": [("ats.rippling.com", "path")], "concurrency": 8, "interval": 0.12},
+    "workday": {"hosts": [("myworkdayjobs.com", "workday")], "concurrency": 5, "interval": 0.2},
 }
 SEED_PROVIDERS = {"greenhouse", "lever", "ashby", "breezy", "recruitee", "teamtailor"}
 RESERVED_SLUGS = {
@@ -48,6 +50,8 @@ RESERVED_SLUGS = {
     "assets", "cdn", "login", "signup", "help", "support", "blog", "status",
     "admin", "dashboard", "account", "oauth", "search", "postings", "job",
     "j", "company", "companies", "feed", "docs", "developers", "developer",
+    "v0", "v1", "robots.txt", "sitemap.xml", "index.html", "favicon.ico",
+    "error", "404", "terms", "privacy",
 }
 FR_CITIES = {
     "paris", "lyon", "marseille", "toulouse", "nice", "nantes", "montpellier",
@@ -144,6 +148,20 @@ def extract_board_token(provider: str, url: str) -> str | None:
                 continue
             if valid_slug(slug):
                 return slug.lower()
+        if mode == "workday" and host.endswith("." + domain):
+            match = re.fullmatch(r"([a-z0-9-]+)\\.(wd[0-9]+)\\.myworkdayjobs\\.com", host)
+            if not match:
+                continue
+            parts = [part for part in parsed.path.split("/") if part]
+            if not parts or parts[0].lower() in {"wday", "api", "login"}:
+                continue
+            if re.fullmatch(r"[a-z]{2}-[A-Z]{2}", parts[0]):
+                locale, site = parts[0], parts[1] if len(parts) > 1 else ""
+            else:
+                locale, site = "en-US", parts[0]
+            if not site or site.lower() in RESERVED_SLUGS:
+                continue
+            return "|".join((match.group(1), match.group(2), site, locale))
         if mode == "subdomain" and host.endswith("." + domain):
             label = host[: -(len(domain) + 1)]
             if "." not in label and valid_slug(label):
@@ -305,6 +323,33 @@ def _job_rows(provider: str, payload: Any) -> list[dict[str, Any]]:
         if isinstance(payload, list):
             return payload
         return payload.get("result", payload.get("jobs", payload.get("positions", []))) if isinstance(payload, dict) else []
+    if provider == "workday":
+        if not isinstance(payload, dict):
+            return []
+        rows = []
+        try:
+            tenant, region, site, locale = slug.split("|", 3)
+        except ValueError:
+            return []
+        host = f"{tenant}.{region}.myworkdayjobs.com"
+        for item in payload.get("jobPostings", []):
+            if not isinstance(item, dict):
+                continue
+            external_path = str(item.get("externalPath") or "")
+            if not external_path.startswith("/") or external_path.startswith("//"):
+                continue
+            info = item.get("jobPostingInfo") if isinstance(item.get("jobPostingInfo"), dict) else {}
+            bullets = item.get("bulletFields") if isinstance(item.get("bulletFields"), list) else []
+            rows.append({
+                "id": info.get("jobReqId") or info.get("jobPostingId") or (bullets[0] if bullets else external_path),
+                "title": item.get("title") or info.get("title") or "",
+                "url": f"https://{host}/{locale}/{site}{external_path}",
+                "location": item.get("locationsText") or info.get("location") or "",
+                "department": info.get("jobFamilyGroup") or info.get("jobFamily"),
+                "startDate": info.get("startDate"),
+                "description": info.get("jobDescription") or info.get("externalJobDescription") or "",
+            })
+        return rows
     if provider == "rippling":
         if isinstance(payload, list):
             return payload
@@ -416,6 +461,124 @@ def normalise_job(provider: str, slug: str, job: dict[str, Any]) -> dict[str, An
     }
 
 
+def _workday_parts(slug: str) -> tuple[str, str, str, str]:
+    try:
+        tenant, region, site, locale = slug.split("|", 3)
+    except ValueError as exc:
+        raise ValueError("invalid Workday board identifier") from exc
+    if not re.fullmatch(r"[a-z0-9-]+", tenant) or not re.fullmatch(r"wd[0-9]+", region):
+        raise ValueError("invalid Workday tenant")
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", site) or not re.fullmatch(r"[a-z]{2}-[A-Z]{2}", locale):
+        raise ValueError("invalid Workday site or locale")
+    return tenant, region, site, locale
+
+
+def _workday_board_url(slug: str) -> str:
+    tenant, region, site, locale = _workday_parts(slug)
+    return f"https://{tenant}.{region}.myworkdayjobs.com/{locale}/{site}"
+
+
+async def _workday_request(
+    client: httpx.AsyncClient,
+    limiter: HostRateLimiter,
+    url: str,
+    payload: dict[str, Any],
+    interval: float,
+) -> tuple[httpx.Response | None, str | None]:
+    host = urlparse(url).netloc.lower()
+    for attempt in range(3):
+        await limiter.wait(host, interval)
+        try:
+            response = await client.post(
+                url,
+                json=payload,
+                follow_redirects=False,
+                headers={"Content-Type": "application/json", "Accept": "application/json"},
+            )
+        except httpx.HTTPError as exc:
+            if attempt == 2:
+                return None, f"{type(exc).__name__}: {exc}"
+            await asyncio.sleep(2 ** attempt)
+            continue
+        if response.status_code in (301, 302, 303, 307, 308):
+            return response, "Workday endpoint redirected; not following POST redirect"
+        if response.status_code in (403, 429, 500, 502, 503, 504):
+            if attempt == 2:
+                return response, f"HTTP {response.status_code} after retries"
+            retry_after = response.headers.get("Retry-After")
+            try:
+                wait = float(retry_after) if retry_after else min(2 ** (attempt + 1), 30)
+            except ValueError:
+                wait = min(2 ** (attempt + 1), 30)
+            await asyncio.sleep(max(1.0, min(wait, 60.0)))
+            continue
+        if response.status_code >= 400:
+            return response, f"HTTP {response.status_code}"
+        return response, None
+    return None, "Workday request failed"
+
+
+async def _fetch_workday_jobs(
+    slug: str,
+    client: httpx.AsyncClient,
+    limiter: HostRateLimiter,
+    interval: float,
+) -> tuple[bool, list[dict[str, Any]], str | None]:
+    try:
+        tenant, region, site, locale = _workday_parts(slug)
+    except ValueError as exc:
+        return False, [], str(exc)
+    host = f"{tenant}.{region}.myworkdayjobs.com"
+    base = f"https://{host}"
+    endpoint = f"{base}/wday/cxs/{tenant}/{site}/jobs"
+
+    # Workday's search API is an undocumented public careers-site endpoint. Only
+    # read it when the specific tenant's robots.txt allows this exact URL.
+    robots_url = f"{base}/robots.txt"
+    robots_response, robots_error = await request_with_retries(
+        client, robots_url, limiter=limiter, interval=interval, retries=2
+    )
+    if robots_error and not (robots_response is not None and robots_response.status_code in (404, 410)):
+        return False, [], f"could not verify Workday robots.txt: {robots_error}"
+    if robots_response is not None and robots_response.status_code not in (404, 410):
+        parser = RobotFileParser()
+        parser.set_url(robots_url)
+        parser.parse(robots_response.text.splitlines())
+        user_agent = client.headers.get("User-Agent", "*")
+        if not parser.can_fetch(user_agent, endpoint):
+            return False, [], "robots.txt disallows Workday public jobs endpoint"
+
+    out: list[dict[str, Any]] = []
+    offset, total = 0, None
+    page_size, max_postings = 20, 2000
+    while offset < max_postings:
+        payload, error = await _workday_request(
+            client, limiter, endpoint,
+            {"appliedFacets": {}, "limit": page_size, "offset": offset, "searchText": ""},
+            interval,
+        )
+        if error or payload is None:
+            return False, [], error or "Workday returned no response"
+        try:
+            data = payload.json()
+        except ValueError:
+            return False, [], "invalid Workday JSON response"
+        if not payload_shape_valid("workday", data):
+            return False, [], "unexpected Workday response shape"
+        if total is None:
+            try:
+                total = int(data.get("total", len(data["jobPostings"])))
+            except (TypeError, ValueError):
+                total = len(data["jobPostings"])
+        out.extend(_job_rows("workday", data))
+        if len(data["jobPostings"]) < page_size:
+            break
+        offset += len(data["jobPostings"])
+        if offset >= total:
+            break
+    return True, out, None
+
+
 def board_url(provider: str, slug: str) -> str:
     urls = {
         "greenhouse": f"https://boards.greenhouse.io/{slug}",
@@ -429,6 +592,7 @@ def board_url(provider: str, slug: str) -> str:
         "pinpoint": f"https://{slug}.pinpointhq.com/",
         "bamboohr": f"https://{slug}.bamboohr.com/careers/list",
         "rippling": f"https://ats.rippling.com/{slug}/jobs",
+        "workday": _workday_board_url(slug),
     }
     if provider not in urls:
         raise ValueError(f"Unsupported provider: {provider}")
@@ -436,6 +600,8 @@ def board_url(provider: str, slug: str) -> str:
 
 
 def board_request(provider: str, slug: str) -> tuple[str, dict[str, Any] | None]:
+    if provider == "workday":
+        raise ValueError("Workday uses its public career-site POST endpoint")
     if provider == "greenhouse":
         return f"https://boards-api.greenhouse.io/v1/boards/{quote(slug, safe='')}/jobs", {"content": "true"}
     if provider == "lever":
@@ -483,6 +649,7 @@ def payload_shape_valid(provider: str, payload: Any) -> bool:
         "pinpoint": ("postings", "jobs", "data"),
         "bamboohr": ("result", "jobs", "positions"),
         "rippling": ("items", "jobs", "results", "data"),
+        "workday": ("jobPostings",),
     }
     keys = expected_arrays.get(provider, ())
     return isinstance(payload, dict) and any(
@@ -499,6 +666,8 @@ async def fetch_board_jobs(
     """Return success, France jobs and an error. An empty successful feed is valid."""
     if provider == "recruitee" and date.today() >= RECRUITEE_TOKEN_DATE:
         return False, [], "disabled: Recruitee requires a Careers API token from 2027-02-10"
+    if provider == "workday":
+        return await _fetch_workday_jobs(slug, client, limiter, float(PROVIDERS[provider]["interval"]))
     try:
         url, params = board_request(provider, slug)
     except ValueError as exc:

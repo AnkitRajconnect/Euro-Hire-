@@ -7,7 +7,7 @@ import pytest
 from discover_companies import comparable_name
 from job_pipeline import (
     PROVIDERS, clean_public_text, create_database, extract_board_token,
-    is_france_location, job_is_in_france, normalise_job, payload_shape_valid, upsert_company,
+    is_france_location, job_is_in_france, normalise_job, payload_shape_valid, board_url, upsert_company,
     upsert_jobs_for_source, upsert_source,
 )
 
@@ -32,6 +32,7 @@ def test_no_employer_allowlist_and_robots_exclusions():
     ("pinpoint", "https://example.pinpointhq.com/postings/123", "example"),
     ("bamboohr", "https://example.bamboohr.com/careers/list", "example"),
     ("rippling", "https://ats.rippling.com/example/jobs/123", "example"),
+    ("workday", "https://sample.wd5.myworkdayjobs.com/en-US/Careers", "sample|wd5|Careers|en-US"),
 ])
 def test_extract_public_board_tokens(provider, url, expected):
     assert extract_board_token(provider, url) == expected
@@ -165,3 +166,30 @@ def test_a_failed_feed_does_not_run_expiration_logic(tmp_path):
 ])
 def test_unexpected_public_feed_shapes_are_not_empty_job_boards(provider, payload, valid):
     assert payload_shape_valid(provider, payload) is valid
+
+
+def test_workday_board_urls_are_safe_and_well_formed():
+    assert board_url("workday", "sample|wd5|Careers|en-US") == (
+        "https://sample.wd5.myworkdayjobs.com/en-US/Careers"
+    )
+    assert extract_board_token(
+        "workday", "https://sample.wd5.myworkdayjobs.com/en-US/Careers"
+    ) == "sample|wd5|Careers|en-US"
+    assert extract_board_token(
+        "workday", "https://sample.wd5.myworkdayjobs.com/wday/cxs/sample/Careers/jobs"
+    ) is None
+
+
+def test_workday_job_postings_are_flattened_for_france_filtering():
+    from job_pipeline import _job_rows
+    payload = {"jobPostings": [{
+        "title": "Account Executive",
+        "externalPath": "/job/Paris/123",
+        "locationsText": "Paris, France",
+        "jobPostingInfo": {"jobReqId": "123", "jobFamilyGroup": "Sales",
+                           "startDate": "2026-11-01", "jobDescription": "Sell"},
+    }]}
+    rows = _job_rows("workday", payload, "sample|wd5|Careers|en-US")
+    assert rows[0]["id"] == "123"
+    assert rows[0]["location"] == "Paris, France"
+    assert job_is_in_france("workday", rows[0])
