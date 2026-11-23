@@ -7,6 +7,7 @@ notice. French legal-notice terms and paths are deliberately supported.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import html
 import ipaddress
 import json
@@ -915,17 +916,16 @@ def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
     return "legal_notice_not_found", "No accessible French legal notice was found on the candidate domain", None, None
 
 
-def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
-    """Round-robin verify website candidates; only exact legal-ID matches auto-verify."""
+def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
+                              workers: int = 12) -> dict:
+    """Verify unique domains in parallel, using exact first-party legal identifiers."""
     limit = max(1, min(int(limit), 5000))
+    workers = max(1, min(int(workers), 20))
     ensure_discovery_schema(con)
-    state = con.execute(
-        "SELECT last_candidate_id FROM france_website_verification_cursor WHERE queue_name='FR_WEBSITES'"
-    ).fetchone()
-    last_id = int(state["last_candidate_id"]) if state else 0
+
     due = """(
              (status IN ('pending_verification','unreachable_retry','robots_disallowed',
-                         'legal_notice_not_found','needs_manual_review')
+                         'legal_notice_not_found','needs_manual_review','verified_registry_id_not_loaded')
               AND (last_checked_at IS NULL OR date(substr(last_checked_at,1,10)) <= date('now','-30 day')))
              OR
              (status IN ('verified_siren_match','legal_identifier_mismatch',
@@ -933,51 +933,87 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
               AND last_checked_at IS NOT NULL
               AND date(substr(last_checked_at,1,10)) <= date('now','-90 day'))
            )"""
-    rows = con.execute(
-        f"""SELECT * FROM france_website_candidates WHERE {due} AND id>?
-            ORDER BY id LIMIT ?""", (last_id, limit)
-    ).fetchall()
+    state = con.execute(
+        "SELECT last_candidate_id FROM france_website_verification_cursor WHERE queue_name='FR_WEBSITES'"
+    ).fetchone()
+    last_id = int(state["last_candidate_id"]) if state else 0
+
+    def select_unique_rows(operator: str, cursor_id: int, max_rows: int):
+        # One check per domain in a batch. Duplicate place records on the same
+        # corporate website are synchronised after the representative is checked.
+        query = f"""
+            SELECT * FROM (
+              SELECT w.*,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY w.candidate_domain
+                       ORDER BY CASE WHEN w.status='verified_siren_match' THEN 0 ELSE 1 END, w.id
+                     ) AS domain_rank
+              FROM france_website_candidates w
+              WHERE {due} AND w.id {operator} ?
+            )
+            WHERE domain_rank=1
+            ORDER BY id
+            LIMIT ?
+        """
+        return con.execute(query, (cursor_id, max_rows)).fetchall()
+
+    rows = select_unique_rows(">", last_id, limit)
     if len(rows) < limit and last_id:
-        extra = con.execute(
-            f"""SELECT * FROM france_website_candidates WHERE {due} AND id<=?
-                ORDER BY id LIMIT ?""", (last_id, limit - len(rows))
-        ).fetchall()
-        rows = list(rows) + list(extra)
+        already = {row["candidate_domain"] for row in rows}
+        wrapped = select_unique_rows("<=", last_id, limit - len(rows))
+        rows.extend(row for row in wrapped if row["candidate_domain"] not in already)
+
+    if isinstance(http, Http):
+        def check_row(row):
+            # One Http session per task, and one domain per task: rate limiting
+            # remains per-host even while independent French domains run in parallel.
+            worker_http = Http(min_delay=http.min_delay, timeout=http.timeout, retries=http.retries)
+            return _verify_one(worker_http, row)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            outcomes = list(pool.map(check_row, rows))
+    else:
+        # Offline test doubles and callers can supply their own deterministic client.
+        outcomes = [_verify_one(http, row) for row in rows]
 
     checked = verified = review = mismatch = failed = 0
     cursor_id = last_id
-    for row in rows:
+    checked_at = now_iso()
+    for row, outcome in zip(rows, outcomes):
         cursor_id = int(row["id"])
         previous_status = row["status"]
-        status, note, matched_siren, verified_legal_notice_url = _verify_one(http, row)
+        status, note, matched_siren, verified_legal_notice_url = outcome
         checked += 1
+        resolved_company = None
+
         if status == "verified_siren_match":
-            company = con.execute(
+            resolved_company = con.execute(
                 """SELECT id,official_domain,domain_verified FROM companies
                    WHERE country='FR' AND registry_id=? AND registry_status='active' AND legal_person=1""",
                 (matched_siren,),
             ).fetchone()
-            if company:
+            if resolved_company:
                 try:
                     existing_candidate_ids = json.loads(row["candidate_registry_ids_json"] or "[]")
                 except (TypeError, ValueError):
                     existing_candidate_ids = []
                 if matched_siren not in existing_candidate_ids:
                     existing_candidate_ids.append(matched_siren)
-                    con.execute(
-                        """UPDATE france_website_candidates
-                           SET candidate_registry_ids_json=?,matched_company_count=?
-                           WHERE id=?""",
-                        (json.dumps(sorted(set(existing_candidate_ids))),
-                         len(set(existing_candidate_ids)), row["id"]),
-                    )
-                current_domain = (company["official_domain"] or "").lower().removeprefix("www.")
-                if not company["official_domain"] or not company["domain_verified"] or current_domain == row["candidate_domain"]:
+                con.execute(
+                    """UPDATE france_website_candidates
+                       SET candidate_registry_ids_json=?,matched_company_count=?,match_score=100
+                       WHERE id=?""",
+                    (json.dumps(sorted(set(existing_candidate_ids))),
+                     len(set(existing_candidate_ids)), row["id"]),
+                )
+                current_domain = (resolved_company["official_domain"] or "").lower().removeprefix("www.")
+                if (not resolved_company["official_domain"]
+                        or not resolved_company["domain_verified"]
+                        or current_domain == row["candidate_domain"]):
                     con.execute(
                         """UPDATE companies SET official_domain=?,domain_verified=1,
                            domain_method='siren_in_legal_notice',domain_checked_at=?,updated_at=?
                            WHERE id=?""",
-                        (row["candidate_domain"], now_iso(), now_iso(), company["id"]),
+                        (row["candidate_domain"], checked_at, checked_at, resolved_company["id"]),
                     )
                     verified += 1
                 else:
@@ -986,7 +1022,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
                     review += 1
             else:
                 status = "verified_registry_id_not_loaded"
-                note += "; SIREN matched the candidate evidence but no company row exists"
+                note += "; legal SIREN/SIRET was found, but no active French legal-entity row exists"
                 review += 1
         elif status == "legal_identifier_mismatch":
             mismatch += 1
@@ -995,37 +1031,69 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
         else:
             failed += 1
 
-        # Re-check previously approved domains every 90 days. If the legal
-        # notice no longer proves the same company, revoke this automated
-        # verification and invalidate career-source approvals tied to it.
-        if previous_status == "verified_siren_match" and status != "verified_siren_match":
-            old_company = con.execute(
-                """SELECT id FROM companies
-                   WHERE country='FR' AND official_domain=? AND domain_method='siren_in_legal_notice'""",
-                (row["candidate_domain"],),
-            ).fetchall()
-            for old in old_company:
-                con.execute(
-                    """UPDATE companies SET domain_verified=0,domain_method=NULL,
-                       domain_checked_at=NULL,career_discovery_checked_at=NULL,
-                       career_discovery_attempted_at=NULL,career_discovery_status='domain_verification_lost',
-                       updated_at=? WHERE id=?""",
-                    (now_iso(), old["id"]),
-                )
-                con.execute(
-                    """UPDATE career_sources SET approved=0,approval_method=NULL,approved_at=NULL,
-                       last_checked=?,last_status='company_domain_verification_lost'
-                       WHERE company_id=?""",
-                    (now_iso(), old["id"]),
-                )
-
         con.execute(
             """UPDATE france_website_candidates
                SET status=?,last_checked_at=?,attempt_count=attempt_count+1,verification_note=?,
                    verified_legal_notice_url=?
                WHERE id=?""",
-            (status, now_iso(), note, verified_legal_notice_url, row["id"]),
+            (status, checked_at, note, verified_legal_notice_url, row["id"]),
         )
+
+        # The same root domain can appear against many outlets/trading names.
+        # Reuse the first-party proof for unverified duplicates instead of
+        # repeatedly downloading the same site for each place record.
+        duplicates = con.execute(
+            """SELECT id,candidate_registry_ids_json FROM france_website_candidates
+               WHERE candidate_domain=? AND id<>?
+                 AND status IN ('pending_verification','unreachable_retry','robots_disallowed',
+                                'legal_notice_not_found','needs_manual_review','verified_registry_id_not_loaded')""",
+            (row["candidate_domain"], row["id"]),
+        ).fetchall()
+        for duplicate in duplicates:
+            try:
+                duplicate_ids = json.loads(duplicate["candidate_registry_ids_json"] or "[]")
+            except (TypeError, ValueError):
+                duplicate_ids = []
+            if status == "verified_siren_match" and resolved_company and matched_siren:
+                duplicate_ids = sorted(set(duplicate_ids) | {matched_siren})
+                duplicate_status = "verified_siren_match"
+                duplicate_note = f"Same root domain verified through its first-party legal notice for SIREN {matched_siren}"
+            else:
+                duplicate_status = status
+                duplicate_note = f"Same root domain checked: {note}"[:500]
+            con.execute(
+                """UPDATE france_website_candidates
+                   SET candidate_registry_ids_json=?,matched_company_count=?,
+                       status=?,last_checked_at=?,attempt_count=attempt_count+1,
+                       verification_note=?,verified_legal_notice_url=?
+                   WHERE id=?""",
+                (json.dumps(duplicate_ids), len(set(duplicate_ids)), duplicate_status,
+                 checked_at, duplicate_note, verified_legal_notice_url, duplicate["id"]),
+            )
+
+        # Revoke previously approved proof if the legal notice no longer
+        # identifies the same active French entity.
+        if previous_status == "verified_siren_match" and status != "verified_siren_match":
+            old_companies = con.execute(
+                """SELECT id FROM companies
+                   WHERE country='FR' AND official_domain=? AND domain_method='siren_in_legal_notice'""",
+                (row["candidate_domain"],),
+            ).fetchall()
+            for old_company in old_companies:
+                con.execute(
+                    """UPDATE companies SET domain_verified=0,domain_method=NULL,
+                       domain_checked_at=NULL,career_discovery_checked_at=NULL,
+                       career_discovery_attempted_at=NULL,career_discovery_status='domain_verification_lost',
+                       updated_at=? WHERE id=?""",
+                    (checked_at, old_company["id"]),
+                )
+                con.execute(
+                    """UPDATE career_sources SET approved=0,approval_method=NULL,approved_at=NULL,
+                       last_checked=?,last_status='company_domain_verification_lost'
+                       WHERE company_id=?""",
+                    (checked_at, old_company["id"]),
+                )
+
         if checked % 25 == 0:
             con.commit()
 
@@ -1035,13 +1103,18 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
                VALUES('FR_WEBSITES',?,?)
                ON CONFLICT(queue_name) DO UPDATE SET
                last_candidate_id=excluded.last_candidate_id,updated_at=excluded.updated_at""",
-            (cursor_id, now_iso()),
+            (cursor_id, checked_at),
         )
     con.commit()
     return {
-        "checked": checked, "verified_by_siren": verified,
-        "needs_review": review, "identifier_mismatches": mismatch,
-        "unreachable_or_not_found": failed, "cursor_last_candidate_id": cursor_id,
+        "checked": checked,
+        "unique_domains_checked": checked,
+        "verified_by_siren": verified,
+        "needs_review": review,
+        "identifier_mismatches": mismatch,
+        "unreachable_or_not_found": failed,
+        "workers": workers if isinstance(http, Http) else 1,
+        "cursor_last_candidate_id": cursor_id,
     }
 
 
