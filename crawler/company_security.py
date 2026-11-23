@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 
 APPROVAL_METHODS = {
     "registry_registered_website",
+    "siren_in_legal_notice",
     "linked_from_verified_company_domain",
     "employer_domain_challenge",
     "manual_documented_review",
