@@ -1057,7 +1057,8 @@ def export_verified_websites(con, output: Path) -> int:
         """SELECT c.registry_id,c.legal_name,c.trading_name,c.official_domain,
                   c.domain_checked_at,c.registry_source,c.raw_json,
                   w.source_record_ids_json,w.source_release,w.address,w.locality,
-                  w.postcode,w.region,w.verification_note,w.verified_legal_notice_url
+                  w.postcode,w.region,w.verification_note,w.verified_legal_notice_url,
+                  w.matched_names_json,w.source_evidence_json,w.place_category
            FROM companies c
            JOIN france_website_candidates w
              ON w.candidate_domain=c.official_domain
@@ -1082,6 +1083,14 @@ def export_verified_websites(con, output: Path) -> int:
             raw = json.loads(row["raw_json"] or "{}")
         except (TypeError, ValueError):
             raw = {}
+        try:
+            matched_names = json.loads(row["matched_names_json"] or "[]")
+        except (TypeError, ValueError):
+            matched_names = []
+        try:
+            source_evidence = json.loads(row["source_evidence_json"] or "[]")
+        except (TypeError, ValueError):
+            source_evidence = []
         companies.append({
             "name": row["trading_name"] or row["legal_name"],
             "legal_name": row["legal_name"],
@@ -1097,10 +1106,12 @@ def export_verified_websites(con, output: Path) -> int:
             "employee_range": raw.get("employee_range"),
             "verified_at": row["domain_checked_at"],
             "verification_method": "Matching SIREN/SIRET found in first-party French legal notice",
+            "place_category": row["place_category"],
+            "matched_names": matched_names,
             "evidence": {
-                "discovery_source": "Overture Maps Places",
+                "discovery_sources": source_evidence,
                 "source_release": row["source_release"],
-                "place_record_ids": json.loads(row["source_record_ids_json"] or "[]"),
+                "source_record_ids": json.loads(row["source_record_ids_json"] or "[]"),
                 "legal_notice_result": row["verification_note"],
                 "legal_notice_url": row["verified_legal_notice_url"],
             },
@@ -1110,6 +1121,7 @@ def export_verified_websites(con, output: Path) -> int:
         "generated_at": now_iso(),
         "count": len(companies),
         "verification_standard": "Only an exact same-company SIREN/SIRET match in an accessible first-party legal notice is included.",
+        "discovery_scope": "France only; French and other available name variants are indexed, but every candidate is matched to an active French employer SIREN before verification.",
         "companies": companies,
     }
     output.parent.mkdir(parents=True, exist_ok=True)
