@@ -461,6 +461,35 @@ def board_request(provider: str, slug: str) -> tuple[str, dict[str, Any] | None]
     raise ValueError(f"Unsupported provider: {provider}")
 
 
+def payload_shape_valid(provider: str, payload: Any) -> bool:
+    """Reject unknown response formats instead of treating them as empty boards."""
+    if provider == "teamtailor":
+        parsed = feedparser.parse(payload)
+        # A valid empty RSS feed still has a recognized feed version.
+        return bool(parsed.version)
+    if provider == "lever":
+        return isinstance(payload, list)
+    if provider == "breezy":
+        return isinstance(payload, list) or (
+            isinstance(payload, dict)
+            and any(isinstance(payload.get(key), list) for key in ("jobs", "positions"))
+        )
+    expected_arrays = {
+        "greenhouse": ("jobs",),
+        "ashby": ("jobs",),
+        "workable": ("jobs",),
+        "recruitee": ("offers",),
+        "gem": ("job_posts", "jobs", "data"),
+        "pinpoint": ("postings", "jobs", "data"),
+        "bamboohr": ("result", "jobs", "positions"),
+        "rippling": ("items", "jobs", "results", "data"),
+    }
+    keys = expected_arrays.get(provider, ())
+    return isinstance(payload, dict) and any(
+        isinstance(payload.get(key), list) for key in keys
+    )
+
+
 async def fetch_board_jobs(
     provider: str,
     slug: str,
@@ -485,6 +514,8 @@ async def fetch_board_jobs(
         payload = response.content if provider == "teamtailor" else response.json()
     except ValueError as exc:
         return False, [], f"invalid public feed: {exc}"
+    if not payload_shape_valid(provider, payload):
+        return False, [], "unexpected public feed response shape"
     rows = _job_rows(provider, payload)
     if provider == "rippling" and isinstance(payload, dict):
         try:
@@ -499,9 +530,12 @@ async def fetch_board_jobs(
             if page_error or page_response is None:
                 break
             try:
-                rows.extend(_job_rows(provider, page_response.json()))
+                page_payload = page_response.json()
             except ValueError:
-                break
+                return False, [], "invalid Rippling page response"
+            if not payload_shape_valid(provider, page_payload):
+                return False, [], "unexpected Rippling page response shape"
+            rows.extend(_job_rows(provider, page_payload))
 
     france_jobs = []
     for row in rows:

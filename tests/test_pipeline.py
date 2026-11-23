@@ -7,7 +7,7 @@ import pytest
 from discover_companies import comparable_name
 from job_pipeline import (
     PROVIDERS, clean_public_text, create_database, extract_board_token,
-    is_france_location, job_is_in_france, normalise_job, upsert_company,
+    is_france_location, job_is_in_france, normalise_job, payload_shape_valid, upsert_company,
     upsert_jobs_for_source, upsert_source,
 )
 
@@ -151,3 +151,17 @@ def test_a_failed_feed_does_not_run_expiration_logic(tmp_path):
     # A failed request never invokes upsert_jobs_for_source.
     assert db.execute("SELECT is_active FROM jobs WHERE source_id=?", (source,)).fetchone()[0] == 1
     db.close()
+
+
+@pytest.mark.parametrize(("provider", "payload", "valid"), [
+    ("greenhouse", {"jobs": []}, True),
+    ("lever", [], True),
+    ("breezy", [], True),
+    ("recruitee", {"offers": []}, True),
+    ("teamtailor", b"<rss version='2.0'><channel><title>Careers</title></channel></rss>", True),
+    ("greenhouse", {"error": "temporarily unavailable"}, False),
+    ("ashby", {"message": "maintenance"}, False),
+    ("teamtailor", b"<html>maintenance</html>", False),
+])
+def test_unexpected_public_feed_shapes_are_not_empty_job_boards(provider, payload, valid):
+    assert payload_shape_valid(provider, payload) is valid
