@@ -515,9 +515,18 @@ def ingest_overture_release(con, release: str) -> dict:
                     extract_overture_name_variants(names_json, prefix="place")
                     + extract_overture_name_variants(brand_names_json, prefix="brand")
                 )
+                # Keep useful observed names even when SIRENE does not yet
+                # recognise the trading name. The first-party legal notice can
+                # later provide the exact SIREN and identify the legal entity.
+                observed_variants = [
+                    item for item in variants if name_keys(item.get("value", ""))
+                ]
+                if not observed_variants:
+                    continue
+
                 matched: dict[str, str] = {}
                 matched_variant_records: list[dict] = []
-                for variant in variants:
+                for variant in observed_variants:
                     for key in name_keys(variant["value"]):
                         for registry_id, method in name_index.get(key, {}).items():
                             matched.setdefault(registry_id, method)
@@ -525,31 +534,35 @@ def ingest_overture_release(con, release: str) -> dict:
                                       "registry_match_method": method}
                             if record not in matched_variant_records:
                                 matched_variant_records.append(record)
-                if not matched or not matched_variant_records:
-                    continue
-                matched_places += 1
 
                 method_priority = {
                     "exact_legal_name": 0,
                     "exact_establishment_alias": 1,
                     "exact_trading_name": 2,
                 }
-                best_match = min(
-                    matched_variant_records,
-                    key=lambda item: (
-                        method_priority.get(item["registry_match_method"], 9),
-                        0 if str(item.get("language") or "").lower().startswith("fr") else 1,
-                        0 if item.get("variant") == "primary" else 1,
-                        len(item["value"]),
-                    ),
-                )
-                best_method = best_match["registry_match_method"]
-                normalized = min(name_keys(best_match["value"]), key=lambda key: (len(key), key))
+                if matched_variant_records:
+                    matched_places += 1
+                    best_match = min(
+                        matched_variant_records,
+                        key=lambda item: (
+                            method_priority.get(item["registry_match_method"], 9),
+                            0 if str(item.get("language") or "").lower().startswith("fr") else 1,
+                            0 if item.get("variant") == "primary" else 1,
+                            len(item["value"]),
+                        ),
+                    )
+                    best_method = best_match["registry_match_method"]
+                else:
+                    best_method = "unmatched_place_name"
+
                 display_name = next(
-                    (v["value"] for v in variants if v["source_field"] == "place.names.primary"),
-                    best_match["value"],
+                    (v["value"] for v in observed_variants
+                     if v["source_field"] == "place.names.primary"),
+                    observed_variants[0]["value"],
                 )
-                for item in matched_variant_records:
+                display_keys = name_keys(display_name)
+                normalized = min(display_keys, key=lambda key: (len(key), key))
+                for item in observed_variants:
                     language = str(item.get("language") or "unspecified").lower()
                     matched_name_languages[language] = matched_name_languages.get(language, 0) + 1
 
@@ -576,6 +589,7 @@ def ingest_overture_release(con, release: str) -> dict:
                         match_method=best_method, address=address, locality=locality,
                         postcode=postcode, region=region, confidence=confidence,
                         release=release, matched_names=matched_variant_records,
+                        observed_names=observed_variants,
                         source_evidence=source_evidence, place_category=place_category,
                     )
                     if con.total_changes > before:
@@ -595,6 +609,7 @@ def ingest_overture_release(con, release: str) -> dict:
         "release": release,
         "french_places_with_websites_scanned": scanned,
         "exact_name_matched_places": matched_places,
+        "places_without_registry_name_match": max(0, scanned - matched_places),
         "candidate_rows_written_or_updated": candidate_domains,
         "invalid_or_non_company_urls": invalid_urls,
         "registry_name_keys": len(name_index),
