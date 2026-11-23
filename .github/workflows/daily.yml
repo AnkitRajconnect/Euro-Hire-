@@ -52,6 +52,11 @@ jobs:
           echo "The public search API is not used as a bulk crawler because it rate-limits high-volume queries."
           python -m crawler.company_registry --db data/company_registry.sqlite3 coverage-fr
 
+      - name: Run the automated test suite
+        run: |
+          python -m pytest -q
+          node --check site/companies.js
+
       - name: Discover and verify French company websites from open business-place data
         env:
           GULLYHIRE_CONTACT: https://github.com/${{ github.repository }}
@@ -68,11 +73,6 @@ jobs:
           --db data/company_registry.sqlite3
           --limit 1000
           --output /tmp/france-domain-review-queue.json
-
-      - name: Run the automated test suite
-        run: |
-          python -m pytest -q
-          node --check site/companies.js
 
       - name: Discover career pages on verified French employer domains
         run: |
