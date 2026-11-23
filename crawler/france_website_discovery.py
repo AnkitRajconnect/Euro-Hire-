@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS france_website_candidates (
   attempt_count INTEGER NOT NULL DEFAULT 0,
   verification_note TEXT,
   verified_legal_notice_url TEXT,
+  verified_registry_id TEXT,
   UNIQUE(candidate_domain, normalized_name)
 );
 CREATE INDEX IF NOT EXISTS idx_fr_website_pending
@@ -128,6 +129,7 @@ def ensure_discovery_schema(con) -> None:
         "source_evidence_json": "TEXT NOT NULL DEFAULT '[]'",
         "place_category": "TEXT",
         "verified_legal_notice_url": "TEXT",
+        "verified_registry_id": "TEXT",
     }
     for name, declaration in migrations.items():
         if name not in columns:
@@ -359,7 +361,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
     now = now_iso()
     existing = con.execute(
         """SELECT id,source_record_ids_json,candidate_registry_ids_json,status,
-                  matched_names_json,observed_names_json,source_evidence_json
+                  matched_names_json,observed_names_json,source_evidence_json,verified_registry_id
            FROM france_website_candidates
            WHERE candidate_domain=? AND normalized_name=?""",
         (domain, normalized_name),
@@ -390,9 +392,11 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
             source_ids.append(place_id)
         merged_ids = sorted(set(existing_ids) | set(registry_ids))
         new_registry_matches = bool(set(merged_ids) - set(existing_ids))
-        requeue = new_registry_matches and existing["status"] not in {
-            "verified_siren_match", "verified_alternative_domain_needs_review"
-        }
+        previously_verified_id = existing["verified_registry_id"]
+        added_unverified_ids = set(merged_ids) - set(existing_ids) - (
+            {previously_verified_id} if previously_verified_id else set()
+        )
+        requeue = bool(added_unverified_ids)
         next_status = "pending_verification" if requeue else existing["status"]
         merged_names = merge_json_list(existing["matched_names_json"], matched_names)
         merged_observed = merge_json_list(existing["observed_names_json"], observed_names)
@@ -414,7 +418,8 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                    status=?,
                    last_checked_at=CASE WHEN ? THEN NULL ELSE last_checked_at END,
                    verification_note=CASE WHEN ? THEN NULL ELSE verification_note END,
-                   verified_legal_notice_url=CASE WHEN ? THEN NULL ELSE verified_legal_notice_url END
+                   verified_legal_notice_url=CASE WHEN ? THEN NULL ELSE verified_legal_notice_url END,
+                   verified_registry_id=CASE WHEN ? THEN NULL ELSE verified_registry_id END
                WHERE id=?""",
             (website_url, json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids),
              100.0 if len(merged_ids) == 1 else (75.0 if merged_ids else 0.0), now,
@@ -422,7 +427,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
              region, match_method, json.dumps(merged_names, ensure_ascii=False),
              json.dumps(merged_observed, ensure_ascii=False),
              json.dumps(merged_sources, ensure_ascii=False), place_category, next_status,
-             int(requeue), int(requeue), int(requeue), existing["id"]),
+             int(requeue), int(requeue), int(requeue), int(requeue), existing["id"]),
         )
         return
 
