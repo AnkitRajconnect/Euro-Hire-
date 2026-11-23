@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS france_website_candidates (
   last_checked_at TEXT,
   attempt_count INTEGER NOT NULL DEFAULT 0,
   verification_note TEXT,
+  verified_legal_notice_url TEXT,
   UNIQUE(candidate_domain, normalized_name)
 );
 CREATE INDEX IF NOT EXISTS idx_fr_website_pending
@@ -230,7 +231,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
         merged_ids = sorted(set(existing_ids) | set(registry_ids))
         con.execute(
             """UPDATE france_website_candidates
-               SET source_record_ids_json=?, candidate_registry_ids_json=?,
+               SET candidate_url=?, source_record_ids_json=?, candidate_registry_ids_json=?,
                    matched_company_count=?, last_seen_at=?, source_release=?,
                    confidence=CASE WHEN confidence IS NULL THEN ? WHEN ? IS NULL THEN confidence
                                    ELSE MAX(confidence, ?) END,
@@ -238,7 +239,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                    postcode=COALESCE(postcode, ?), region=COALESCE(region, ?),
                    match_method=CASE WHEN match_method='exact_trading_name' THEN ? ELSE match_method END
                WHERE id=?""",
-            (json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids), now,
+            (website_url, json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids), now,
              release, confidence, confidence, confidence, address, locality, postcode,
              region, match_method, existing["id"]),
         )
@@ -250,7 +251,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
             address,locality,postcode,region,confidence,source_release,status,
             first_seen_at,last_seen_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (domain, f"https://{domain}/", normalized_name, place_name,
+        (domain, website_url, normalized_name, place_name,
          json.dumps([place_id]), json.dumps(sorted(set(registry_ids))), len(set(registry_ids)),
          match_method, 100.0 if len(set(registry_ids)) == 1 else 75.0,
          address, locality, postcode, region, confidence, release,
@@ -454,15 +455,15 @@ def _legal_notice_urls(home_url: str, homepage: str) -> list[str]:
     return list(dict.fromkeys(urls))[:12]
 
 
-def _verify_one(http: Http, row) -> tuple[str, str, str | None]:
+def _verify_one(http: Http, row) -> tuple[str, str, str | None, str | None]:
     domain = row["candidate_domain"]
     root_url = f"https://{domain}/"
     try:
         home = _get_same_site(http, root_url, domain)
     except PermissionError as exc:
-        return "robots_disallowed", str(exc), None
+        return "robots_disallowed", str(exc), None, None
     except (FetchError, OSError, ValueError) as exc:
-        return "unreachable_retry", str(exc)[:300], None
+        return "unreachable_retry", str(exc)[:300], None, None
 
     expected = set(json.loads(row["candidate_registry_ids_json"] or "[]"))
     urls = _legal_notice_urls(home.url, home.text)
@@ -479,21 +480,25 @@ def _verify_one(http: Http, row) -> tuple[str, str, str | None]:
         sirens = extract_legal_sirens(page.text)
         if sirens & expected:
             matched = sorted(sirens & expected)[0]
-            return "verified_siren_match", f"French legal notice contains matching SIREN/SIRET {matched}", matched
+            return "verified_siren_match", f"French legal notice contains matching SIREN/SIRET {matched}", matched, legal_url
         other_ids.update(sirens)
     if other_ids:
         return "legal_identifier_mismatch", (
             "Legal notice contains a different SIREN/SIRET: " + ", ".join(sorted(other_ids)[:5])
-        ), None
+        ), None, None
     if saw_legal_page:
-        return "needs_manual_review", "Legal notice was found but no matching SIREN/SIRET was detected", None
-    return "legal_notice_not_found", "No accessible French legal notice was found on the candidate domain", None
+        return "needs_manual_review", "Legal notice was found but no matching SIREN/SIRET was detected", None, None
+    return "legal_notice_not_found", "No accessible French legal notice was found on the candidate domain", None, None
 
 
 def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
     """Round-robin verify website candidates; only exact legal-ID matches auto-verify."""
     limit = max(1, min(int(limit), 5000))
     con.executescript(SCHEMA)
+    candidate_columns = {row["name"] for row in con.execute("PRAGMA table_info(france_website_candidates)")}
+    if "verified_legal_notice_url" not in candidate_columns:
+        con.execute("ALTER TABLE france_website_candidates ADD COLUMN verified_legal_notice_url TEXT")
+        con.commit()
     state = con.execute(
         "SELECT last_candidate_id FROM france_website_verification_cursor WHERE queue_name='FR_WEBSITES'"
     ).fetchone()
@@ -524,7 +529,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
     for row in rows:
         cursor_id = int(row["id"])
         previous_status = row["status"]
-        status, note, matched_siren = _verify_one(http, row)
+        status, note, matched_siren, verified_legal_notice_url = _verify_one(http, row)
         checked += 1
         if status == "verified_siren_match":
             verified += 1
@@ -582,9 +587,10 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
 
         con.execute(
             """UPDATE france_website_candidates
-               SET status=?,last_checked_at=?,attempt_count=attempt_count+1,verification_note=?
+               SET status=?,last_checked_at=?,attempt_count=attempt_count+1,verification_note=?,
+                   verified_legal_notice_url=?
                WHERE id=?""",
-            (status, now_iso(), note, row["id"]),
+            (status, now_iso(), note, verified_legal_notice_url, row["id"]),
         )
         if checked % 25 == 0:
             con.commit()
@@ -639,7 +645,7 @@ def export_verified_websites(con, output: Path) -> int:
         """SELECT c.registry_id,c.legal_name,c.trading_name,c.official_domain,
                   c.domain_checked_at,c.registry_source,c.raw_json,
                   w.source_record_ids_json,w.source_release,w.address,w.locality,
-                  w.postcode,w.region,w.verification_note
+                  w.postcode,w.region,w.verification_note,w.verified_legal_notice_url
            FROM companies c
            JOIN france_website_candidates w
              ON w.candidate_domain=c.official_domain
@@ -684,6 +690,7 @@ def export_verified_websites(con, output: Path) -> int:
                 "source_release": row["source_release"],
                 "place_record_ids": json.loads(row["source_record_ids_json"] or "[]"),
                 "legal_notice_result": row["verification_note"],
+                "legal_notice_url": row["verified_legal_notice_url"],
             },
         })
     payload = {
