@@ -168,7 +168,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
         verification = company.get("verification") or {}
         registry_country = ((verification.get("registry") or {}).get("country") or "").upper()
         france_signal = hint == "FR" or registry_country == "FR" or company.get("hq") == "FR" or bool(
-            re.search(r"\\bfrance\\b", f"{blob} {raw.get('country_text') or ''}", re.I)
+            re.search(r"\bfrance\b", f"{blob} {raw.get('country_text') or ''}", re.I)
         )
         # Generic remote postings are only eligible when the employer itself is
         # registered in France; "Europe", "EMEA" and worldwide remote are not enough.
