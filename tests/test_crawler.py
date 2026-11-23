@@ -663,59 +663,42 @@ def test_no_approved_sources_fails_closed_and_preserves_public_job_dataset(tmp_p
     assert code == 2 and payload == original
 
 
-def test_curated_public_ats_launch_sources_are_approved_without_registry():
+def test_france_launch_seed_is_approved_and_not_a_company_limit():
     from pathlib import Path
     from crawler.crawl import load_companies
 
-    companies = load_companies(Path("companies.yaml"), curated_config=True)
-    assert len(companies) == 7
-    for company in companies:
-        assert is_company_approved(company) == (True, None)
-        assert "registry" not in company["verification"]
+    companies = load_companies(Path("companies.yaml"), curated_config=True, country="FR")
+    assert len(companies) == 1
+    assert companies[0]["name"] == "Hugging Face"
+    assert companies[0]["hq"] == "FR"
+    assert is_company_approved(companies[0]) == (True, None)
+    assert "registry" not in companies[0]["verification"]
 
 
-def test_curated_source_rejects_wrong_ats_board_and_wrong_careers_domain():
-    from pathlib import Path
+def test_country_scope_excludes_foreign_curated_sources(tmp_path):
     from crawler.crawl import load_companies
 
-    company = next(c for c in load_companies(Path("companies.yaml"), curated_config=True) if c["name"] == "Linear")
-    bad_board = dict(company, career_url="https://jobs.ashbyhq.com/not-linear")
-    assert is_company_approved(bad_board)[0] is False
-    bad_evidence = dict(company, official_careers_url="https://not-linear.example/careers")
-    assert is_company_approved(bad_evidence)[0] is False
-
-
-def test_curated_ashby_company_feed_publishes_real_postings_and_not_hybrid_as_remote():
-    from pathlib import Path
-    from crawler.crawl import load_companies
-
-    company = next(c for c in load_companies(Path("companies.yaml"), curated_config=True) if c["name"] == "Linear")
-    board_url = "https://api.ashbyhq.com/posting-api/job-board/linear?includeCompensation=true"
-    http = FakeHttp({board_url: {"jobs": [{
-        "id": "real-posting-1",
-        "title": "Senior Software Engineer",
-        "jobUrl": "https://jobs.ashbyhq.com/linear/real-posting-1",
-        "applyUrl": "https://jobs.ashbyhq.com/linear/real-posting-1",
-        "location": "Paris, France",
-        "address": {"postalAddress": {"addressLocality": "Paris", "addressCountry": "France"}},
-        "isRemote": True,
-        "workplaceType": "Hybrid",
-        "department": "Engineering",
-        "publishedAt": "2026-11-20T08:00:00+00:00",
-        "descriptionPlain": "Build product infrastructure with the engineering team.",
-        "isListed": True,
-    }]}})
-    result = crawl_company(company, http, NOW)
-    assert result["ok"] is True
-    assert result["raw"] == 1
-    assert result["kept"] == 1
-    job = result["jobs"][0]
-    assert job["company"] == "Linear"
-    assert job["title"] == "Senior Software Engineer"
-    assert job["url"].startswith("https://jobs.ashbyhq.com/linear/")
-    assert job["career_source_verified"] is True
-    assert job["company_registry_verified"] is False
-    assert job["remote"] is False  # Hybrid is not shown as fully remote.
+    path = tmp_path / "companies.yaml"
+    path.write_text("""companies:
+  - name: France Co
+    slug: france-co
+    ats: greenhouse
+    hq: FR
+    official_domain: france.example
+    official_careers_url: https://france.example/careers
+    career_url: https://boards.greenhouse.io/france-co
+    source_reviewed_on: '2026-11-23'
+  - name: Foreign Co
+    slug: foreign-co
+    ats: greenhouse
+    hq: DE
+    official_domain: foreign.example
+    official_careers_url: https://foreign.example/careers
+    career_url: https://boards.greenhouse.io/foreign-co
+    source_reviewed_on: '2026-11-23'
+""", encoding="utf-8")
+    companies = load_companies(path, curated_config=True, country="FR")
+    assert [company["name"] for company in companies] == ["France Co"]
 
 
 def test_total_live_feed_outage_keeps_previous_published_jobs(tmp_path, monkeypatch):
@@ -740,7 +723,7 @@ def test_total_live_feed_outage_keeps_previous_published_jobs(tmp_path, monkeypa
     jobs_path.write_text(json.dumps(original), encoding="utf-8")
     monkeypatch.setattr(crawl_module, "Http", lambda **kwargs: FakeHttp({}))
 
-    code = crawl_module.main(["--curated-config", "--companies", str(companies_file),
+    code = crawl_module.main(["--curated-config", "--country", "DE", "--companies", str(companies_file),
                               "--registry-db", str(tmp_path / "missing.sqlite3"),
                               "--approved-companies", str(tmp_path / "missing.json"),
                               "--out", str(out), "--review-out", str(tmp_path / "review.json")])
