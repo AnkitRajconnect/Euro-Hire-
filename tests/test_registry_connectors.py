@@ -5,6 +5,8 @@ from pathlib import Path
 
 from crawler.company_registry import (
     _brreg_companies,
+    _classify_fr_employer_range,
+    import_fr_stock_file,
     _companies_house_companies,
     _cro_companies,
     _prh_companies,
@@ -241,3 +243,44 @@ def test_gleif_country_filter_is_applied_and_unknown_status_stays_pending():
     assert out[0]["country"] == "NL"
     assert out[0]["registry_status"] == "pending"
     assert "official_domain" not in out[0]
+
+
+
+def test_france_employer_scope_uses_sirene_employee_bands():
+    assert _classify_fr_employer_range("NN") == "non_employer"
+    assert _classify_fr_employer_range("00") == "employer"
+    assert _classify_fr_employer_range("01") == "employer"
+    assert _classify_fr_employer_range("53") == "employer"
+    assert _classify_fr_employer_range("") == "unknown"
+    assert _classify_fr_employer_range("XX") == "unknown"
+
+
+def test_france_stock_import_records_employer_scope_and_requires_employee_field(tmp_path):
+    csv_file = tmp_path / "fr.csv"
+    csv_file.write_text(
+        "siren;name;status;form;effectif;diffusion\\n"
+        "123456789;Employeur SAS;A;5710;11;O\\n"
+        "234567890;No employee SAS;A;5710;NN;O\\n"
+        "345678901;Unknown count SAS;A;5710;;O\\n",
+        encoding="utf-8",
+    )
+    mapping = {
+        "number_column": "siren", "name_column": "name", "status_column": "status",
+        "active_values": ["A"], "inactive_values": ["C"], "legal_form_column": "form",
+        "legal_form_prefixes": ["5"], "employee_range_column": "effectif",
+        "diffusion_column": "diffusion", "excluded_diffusion_values": ["P", "N"],
+        "snapshot_date": "2026-11-23",
+    }
+    mapping_file = tmp_path / "fr-mapping.json"
+    mapping_file.write_text(json.dumps(mapping), encoding="utf-8")
+    con = connect(tmp_path / "fr-registry.sqlite3")
+    try:
+        assert import_fr_stock_file(con, csv_file, mapping_file) == 3
+        rows = {r["registry_id"]: json.loads(r["raw_json"]) for r in con.execute(
+            "SELECT registry_id,raw_json FROM companies WHERE country='FR'")}
+        assert rows["123456789"]["employer_scope"] == "employer"
+        assert rows["123456789"]["employee_range"] == "11"
+        assert rows["234567890"]["employer_scope"] == "non_employer"
+        assert rows["345678901"]["employer_scope"] == "unknown"
+    finally:
+        con.close()
