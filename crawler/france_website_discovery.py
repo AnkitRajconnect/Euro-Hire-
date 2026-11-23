@@ -1046,10 +1046,13 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
         # Reuse the first-party proof for unverified duplicates instead of
         # repeatedly downloading the same site for each place record.
         duplicates = con.execute(
-            """SELECT id,candidate_registry_ids_json FROM france_website_candidates
+            """SELECT id,candidate_registry_ids_json,status FROM france_website_candidates
                WHERE candidate_domain=? AND candidate_registry_ids_json=? AND id<>?""",
             (row["candidate_domain"], row["candidate_registry_ids_json"], row["id"]),
         ).fetchall()
+        had_verified_duplicate = any(
+            duplicate["status"] == "verified_siren_match" for duplicate in duplicates
+        )
         for duplicate in duplicates:
             try:
                 duplicate_ids = json.loads(duplicate["candidate_registry_ids_json"] or "[]")
@@ -1077,7 +1080,7 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
 
         # Revoke previously approved proof if the legal notice no longer
         # identifies the same active French entity.
-        if previous_status == "verified_siren_match" and status != "verified_siren_match":
+        if (previous_status == "verified_siren_match" or had_verified_duplicate) and status != "verified_siren_match":
             old_companies = con.execute(
                 """SELECT id FROM companies
                    WHERE country='FR' AND official_domain=? AND domain_method='siren_in_legal_notice'""",
