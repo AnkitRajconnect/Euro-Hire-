@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#244B3B">
   <title>Company database — GullyHire</title>
-  <meta name="description" content="Search public global legal-entity records from the GLEIF Global LEI Index. No account or API key required.">
+  <meta name="description" content="Search French legal-entity records available in the GLEIF Global LEI Index. No account or API key required.">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="companies.css">
 </head>
@@ -26,9 +26,9 @@
     <section class="directory-hero" aria-labelledby="directory-title">
       <div class="eyebrow">GULLYHIRE · COMPANY DISCOVERY</div>
       <h1 id="directory-title">Find a <span>registered entity.</span></h1>
-      <p class="directory-lead">Search the Global Legal Entity Identifier (LEI) Index. Get a legal name, LEI, registration status, legal form and registered address from a free public data source.</p>
+      <p class="directory-lead">Search French records in the Global Legal Entity Identifier (LEI) Index. Get a legal name, LEI, registration status, legal form and registered address from a free public data source.</p>
       <div class="source-pills" aria-label="Data source features">
-        <span>No account</span><span>No API key</span><span>Global records</span><span>Live search</span>
+        <span>France only</span><span>No account</span><span>No API key</span><span>Live search</span>
       </div>
     </section>
 
@@ -41,7 +41,7 @@
         <label class="company-filter-field" for="country-filter">
           <span class="field-label">Country</span>
           <select id="country-filter" name="country">
-            <option value="">All countries</option>
+            <option value="FR" selected>France</option>
             <option value="AT">Austria</option><option value="BE">Belgium</option><option value="CH">Switzerland</option>
             <option value="DE">Germany</option><option value="DK">Denmark</option><option value="ES">Spain</option>
             <option value="FI">Finland</option><option value="FR">France</option><option value="GB">United Kingdom</option>
@@ -63,7 +63,7 @@
 
     <section class="important-note" aria-label="Coverage and verification note">
       <span class="note-icon" aria-hidden="true">i</span>
-      <p><strong>What this database does — and does not — prove.</strong> GLEIF contains legal entities that have an LEI; it is not a complete list of every small business or employer. An active entity status and an issued LEI are useful identity checks, but they do not prove that a company is hiring, that a website belongs to it, or that a job offer is genuine. GullyHire keeps every result as a <strong>candidate</strong> until its official domain and careers source are independently checked.</p>
+      <p><strong>What this database does — and does not — prove.</strong> GLEIF contains French legal entities that have an LEI; it is not a complete list of every small business or employer. An active entity status and an issued LEI are useful identity checks, but they do not prove that a company is hiring, that a website belongs to it, or that a job offer is genuine. GullyHire keeps every result as a <strong>candidate</strong> until its official domain and careers source are independently checked.</p>
     </section>
 
     <section class="directory-workspace" aria-label="Company search results and shortlist">
@@ -110,7 +110,7 @@
     </section>
 
     <section class="source-credit">
-      <div><strong>Data provider: GLEIF Global LEI Index</strong><p>GLEIF publishes open legal-entity reference data under CC0. Search requests use the public GLEIF API; no GullyHire account, API key or backend is required.</p></div>
+      <div><strong>Data provider: GLEIF Global LEI Index · France filter</strong><p>GLEIF publishes open legal-entity reference data under CC0. Search requests use the public GLEIF API; no GullyHire account, API key or backend is required.</p></div>
       <a href="https://www.gleif.org/en/lei-data/access-and-use-lei-data" target="_blank" rel="noopener noreferrer">About GLEIF open data ↗</a>
     </section>
   </main>
