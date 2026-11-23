@@ -365,9 +365,15 @@
       registry.rel = "noopener noreferrer";
       links.append(registry);
     }
+    const discoverySources = Array.from(new Set(
+      (record.evidence && record.evidence.discovery_sources || [])
+        .map((item) => item && (item.provider || item.dataset))
+        .filter(Boolean)
+    ));
     const proof = node("p", "verified-website-proof",
       "Verification: " + (record.verification_method || "SIREN/SIRET matched in first-party legal notice") +
-      (record.verified_at ? " · Checked " + new Date(record.verified_at).toLocaleDateString("en-GB") : "")
+      (record.verified_at ? " · Checked " + new Date(record.verified_at).toLocaleDateString("en-GB") : "") +
+      (discoverySources.length ? " · Candidate source: " + discoverySources.join(", ") : "")
     );
     const legalNoticeUrl = safeHttpsUrl(record.evidence && record.evidence.legal_notice_url);
     if (legalNoticeUrl) {
@@ -422,7 +428,7 @@
       const payload = await response.json();
       verifiedWebsiteRecords = Array.isArray(payload.companies) ? payload.companies : [];
       status.textContent = verifiedWebsiteRecords.length.toLocaleString("en-GB") +
-        " verified French company websites · Source: Overture Maps candidate discovery + matching first-party legal notice";
+        " verified French company websites · Candidate discovery: Overture Maps and SIREN-linked Wikidata records · Approval requires a matching first-party legal notice";
       status.className = "search-status";
       renderVerifiedWebsites();
     } catch (error) {
