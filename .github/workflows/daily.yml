@@ -52,8 +52,20 @@ jobs:
           path: data/company_registry.sqlite3
           key: france-sirene-${{ github.run_id }}
 
+      - name: Build the French employer website-verification queue
+        run: >-
+          python -m crawler.france_domain_queue
+          --db data/company_registry.sqlite3
+          --limit 500
+          --output /tmp/france-domain-review-queue.json
+
       - name: Run the automated test suite
         run: python -m pytest -q
+
+      - name: Discover career pages on verified French employer domains
+        run: |
+          python -m crawler.company_registry --db data/company_registry.sqlite3 discover-all --country FR --limit 500
+          python -m crawler.company_registry --db data/company_registry.sqlite3 coverage-fr
 
       - name: Crawl the configured public employer boards
         env:
@@ -84,6 +96,15 @@ jobs:
         with:
           name: gullyhire-review-queue
           path: /tmp/gullyhire-review-queue.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Keep French employer website-verification queue
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: france-domain-review-queue
+          path: /tmp/france-domain-review-queue.json
           if-no-files-found: ignore
           retention-days: 7
 
