@@ -25,7 +25,7 @@ from .france_establishment_aliases import SCHEMA as ESTABLISHMENT_ALIAS_SCHEMA, 
 STAC_CATALOG = "https://stac.overturemaps.org/catalog.json"
 OVERTURE_S3 = "s3://overturemaps-us-west-2/release/{release}/theme=places/type=place/*.parquet"
 WIKIDATA_SPARQL = "https://query-next.wikidata.org/sparql"
-WIKIDATA_PAGE_SIZE = 200
+WIKIDATA_PAGE_SIZE = 500
 RELEASE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}\.\d+$")
 BATCH_SIZE = 2500
 
@@ -1342,7 +1342,7 @@ def run(db: Path, *, verify_limit: int = 1000, report_path: Path | None = None,
         # an active French employer record before its website is considered.
         try:
             wikidata_result = ingest_wikidata_siren_websites(
-                con, Http(min_delay=1.0, timeout=60, retries=2), pages=2
+                con, Http(min_delay=1.0, timeout=60, retries=2), pages=10, page_size=500
             )
             source_runs["wikidata"] = {"ok": True, **wikidata_result}
         except Exception as exc:
