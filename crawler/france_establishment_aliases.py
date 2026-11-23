@@ -121,6 +121,7 @@ def sync_establishment_aliases(con, normalize_name: Callable[[str], set[str]],
         ddb.execute("INSTALL httpfs")
         ddb.execute("LOAD httpfs")
         ddb.execute("SET threads=4")
+        ddb.execute("SET memory_limit='2GB'")
         with tempfile.TemporaryDirectory(prefix="eurohire-sirene-establishments-") as temp:
             siren_csv = Path(temp) / "employer-sirens.csv"
             employer_count = _write_employer_sirens(con, siren_csv)
