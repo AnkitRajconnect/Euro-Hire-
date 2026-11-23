@@ -119,6 +119,12 @@ def name_keys(value: str) -> set[str]:
         ("s", "a"), ("s", "a", "s"), ("s", "a", "s", "u"),
         ("s", "a", "r", "l"), ("e", "u", "r", "l"),
         ("s", "c", "i"), ("s", "n", "c"),
+        ("societe", "anonyme"),
+        ("societe", "par", "actions", "simplifiee"),
+        ("societe", "a", "responsabilite", "limitee"),
+        ("entreprise", "unipersonnelle", "a", "responsabilite", "limitee"),
+        ("societe", "en", "nom", "collectif"),
+        ("societe", "civile", "immobiliere"),
     }
     changed = True
     while changed and trimmed:
