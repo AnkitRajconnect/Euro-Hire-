@@ -329,6 +329,23 @@ def ingest_overture_release(con, release: str) -> dict:
             WHERE addresses IS NOT NULL
               AND len(addresses) > 0
               AND addresses[1].country = 'FR'
+              -- Overture is a global dataset. Bounding-box intersection limits
+              -- row groups to metropolitan France and inhabited French overseas
+              -- territories; the country predicate above remains authoritative.
+              AND (
+                bbox IS NULL
+                OR (bbox.xmin <= 10.0 AND bbox.xmax >= -6.0 AND bbox.ymin <= 52.0 AND bbox.ymax >= 41.0)
+                OR (bbox.xmin <= -60.5 AND bbox.xmax >= -62.0 AND bbox.ymin <= 17.0 AND bbox.ymax >= 14.0)
+                OR (bbox.xmin <= -51.0 AND bbox.xmax >= -55.5 AND bbox.ymin <= 6.0 AND bbox.ymax >= 1.5)
+                OR (bbox.xmin <= 56.5 AND bbox.xmax >= 54.8 AND bbox.ymin <= -20.0 AND bbox.ymax >= -22.0)
+                OR (bbox.xmin <= 46.0 AND bbox.xmax >= 44.5 AND bbox.ymin <= -12.0 AND bbox.ymax >= -14.0)
+                OR (bbox.xmin <= -62.4 AND bbox.xmax >= -63.5 AND bbox.ymin <= 18.5 AND bbox.ymax >= 17.4)
+                OR (bbox.xmin <= -55.5 AND bbox.xmax >= -57.0 AND bbox.ymin <= 48.0 AND bbox.ymax >= 46.0)
+                OR (bbox.xmin <= -133.0 AND bbox.xmax >= -155.0 AND bbox.ymin <= -6.0 AND bbox.ymax >= -29.0)
+                OR (bbox.xmin <= 169.0 AND bbox.xmax >= 162.0 AND bbox.ymin <= -17.0 AND bbox.ymax >= -24.0)
+                OR (bbox.xmin <= -175.0 AND bbox.xmax >= -179.0 AND bbox.ymin <= -12.0 AND bbox.ymax >= -15.0)
+                OR (bbox.xmin <= -108.0 AND bbox.xmax >= -110.0 AND bbox.ymin <= 11.0 AND bbox.ymax >= 9.0)
+              )
               AND websites IS NOT NULL
               AND len(websites) > 0
         """
