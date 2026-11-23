@@ -695,31 +695,57 @@ async def fetch_ats_board(http: "PoliteHTTP", board: dict) -> tuple[list[dict], 
             return [x for x in results if x], None
 
         if provider == "teamtailor":
-            response = await http.get_text(url)
-            feed = feedparser.parse(response)
-            if feed.bozo and not feed.entries:
-                raise ValueError("Teamtailor returned invalid RSS")
-            company_name = (feed.feed.get("title") if feed.feed else None) or None
             results = []
-            for item in feed.entries:
-                values = {str(k).lower(): v for k, v in item.items()}
-                location_parts = []
-                for key, value in values.items():
-                    if "city" in key or "country" in key:
-                        if isinstance(value, str) and value.strip() and value not in location_parts:
-                            location_parts.append(value.strip())
-                location = ", ".join(location_parts)
-                remote_status = str(values.get("tt_remotestatus") or values.get("remote_status") or "").lower()
-                results.append(_raw_job(
-                    provider, item.get("id") or item.get("guid") or item.get("link"),
-                    item.get("title"), item.get("link"), location,
-                    item.get("country_code"),
-                    department=item.get("tt_department") or item.get("department"),
-                    posted_at=item.get("published") or item.get("updated"),
-                    description=item.get("summary") or item.get("description"),
-                    remote=remote_status in {"fully", "remote", "temporary"},
-                    company_name=company_name,
-                ))
+            seen = set()
+            offset = 0
+            page_size = 100
+            company_name = None
+            while offset < 5000:
+                if offset == 0:
+                    page_url = url
+                else:
+                    page_url = url
+                if not await _robots_allowed(http, page_url):
+                    raise PermissionError("Teamtailor robots policy disallows the public RSS feed")
+                response = await http.get_text(
+                    page_url, params={"per_page": page_size, "offset": offset}
+                )
+                feed = feedparser.parse(response)
+                if feed.bozo and not feed.entries:
+                    raise ValueError("Teamtailor returned invalid RSS")
+                if company_name is None:
+                    company_name = (feed.feed.get("title") if feed.feed else None) or None
+                for item in feed.entries:
+                    values = {str(k).lower(): v for k, v in item.items()}
+                    location_parts = []
+                    for key, value in values.items():
+                        if "city" in key or "country" in key:
+                            if isinstance(value, str) and value.strip() and value not in location_parts:
+                                location_parts.append(value.strip())
+                    location = ", ".join(location_parts)
+                    remote_status = str(
+                        values.get("tt_remotestatus") or values.get("remote_status") or ""
+                    ).lower()
+                    job_url = item.get("link") or ""
+                    identifier = item.get("id") or item.get("guid") or job_url
+                    if not identifier or identifier in seen:
+                        continue
+                    seen.add(identifier)
+                    results.append(_raw_job(
+                        provider, identifier, item.get("title"), job_url, location,
+                        item.get("country_code"),
+                        department=item.get("tt_department") or item.get("department"),
+                        posted_at=item.get("published") or item.get("updated"),
+                        description=item.get("summary") or item.get("description"),
+                        remote=remote_status == "fully",
+                        company_name=company_name,
+                    ))
+                count = len(feed.entries)
+                if count < page_size:
+                    break
+                offset += count
+                if offset >= 5000:
+                    raise ValueError("Teamtailor board exceeded the 5,000-job safety cap; refusing to expire jobs from a partial feed")
             return [x for x in results if x], None
 
         if provider == "smartrecruiters":
