@@ -436,7 +436,7 @@
     jobs.forEach((job) => {
       if (job.country) counts.set(job.country, (counts.get(job.country) || 0) + 1);
     });
-    $("country").replaceChildren(element("option", { value: "", text: `All France (${jobs.length})` }));
+    $("country").replaceChildren(element("option", { value: "", text: `All Europe (${jobs.length})` }));
     [...counts.keys()].sort((a, b) => countryName(a).localeCompare(countryName(b))).forEach((code) => {
       $("country").append(element("option", { value: code, text: `${countryName(code)} (${counts.get(code)})` }));
     });
@@ -559,7 +559,7 @@
       generatedAt = data.generated_at || null;
       // Never render placeholder/demo rows, even if an old data file is accidentally uploaded.
       jobs = data.demo === true ? [] : (Array.isArray(data.jobs) ? data.jobs.filter((job) =>
-        job && job.country === "FR" && job.ats !== "demo" &&
+        job && typeof job.country === "string" && /^[A-Z]{2}$/.test(job.country) && job.ats !== "demo" &&
         !String(job.id || "").startsWith("demo:") &&
         typeof job.url === "string" && job.url.startsWith("https://")
       ) : []);
