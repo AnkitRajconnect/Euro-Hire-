@@ -76,13 +76,14 @@ jobs:
           python -m crawler.company_registry --db data/company_registry.sqlite3 discover-all --country FR --limit 500
           python -m crawler.company_registry --db data/company_registry.sqlite3 coverage-fr
 
-      - name: Crawl the configured public employer boards
+      - name: Crawl all approved French employer career sources (no fixed company list)
         env:
           GULLYHIRE_CONTACT: https://github.com/${{ github.repository }}
         run: >-
           python -m crawler.crawl
           --curated-config
           --companies companies.yaml
+          --country FR
           --review-out /tmp/gullyhire-review-queue.json
           --out site/data
           --workers 6
