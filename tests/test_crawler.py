@@ -277,11 +277,13 @@ def test_manual_trade_and_payment_scam_are_blocked():
     assert screen_vacancy(raw, company)[0] == "review"
 
 
-def test_unclassified_professional_role_is_retained_for_the_other_filter():
+def test_unclassified_professional_role_is_published_for_the_other_filter():
     raw = {"id": "1", "title": "Mystery Role", "url": "https://x.test/1", "location": "Paris"}
     job = normalize(raw, co(), NOW)
     assert job is not None
     assert job["role"] == "other"
+    screened = {**raw, "url": "https://boards.greenhouse.io/acme/jobs/1"}
+    assert screen_vacancy(screened, co())[0] == "publish"
 
 
 def test_registry_store_requires_explicit_domain_and_source_approval(tmp_path):
@@ -444,7 +446,7 @@ def test_manual_trade_exclusion_works_in_belgian_languages():
         assert screen_vacancy(raw, company)[0] == "reject", title
 
 
-def test_official_linked_ats_source_is_auto_approved_and_custom_page_waits(tmp_path):
+def test_official_linked_ats_and_first_party_jsonld_sources_are_auto_approved(tmp_path):
     from crawler.company_registry import discover_company_sources
     db = tmp_path / "registry.sqlite3"
     con = connect(db)
@@ -461,8 +463,8 @@ def test_official_linked_ats_source_is_auto_approved_and_custom_page_waits(tmp_p
     assert len(approved) == 1 and approved[0]["ats_slug"] == "example"
     assert is_company_approved(approved[0])[0] is True
 
-    # A custom first-party page with structured jobs but no known ATS is
-    # discovered as a candidate and cannot be automatically published.
+    # A custom first-party careers page linked from the verified homepage is
+    # crawled by the JSON-LD-only adapter; vacancy URLs stay on the verified host.
     upsert_candidate(con, country="FR", registry_id="987654321", legal_name="Custom SAS",
                      registry_status="active", registry_source="INSEE SIRENE", legal_person=True,
                      raw={"employer_scope": "employer", "employee_range": "11"})
@@ -472,8 +474,14 @@ def test_official_linked_ats_source_is_auto_approved_and_custom_page_waits(tmp_p
     candidates = discover_company_sources(con, "FR", "987654321", FakeHttp({
         "https://custom.fr": custom_home, "https://custom.fr/jobs": custom_jobs}))
     assert len(candidates) == 1 and candidates[0]["ats"] == "jsonld"
-    assert candidates[0].get("auto_approve") is not True
-    assert len(approved_companies(db)) == 1
+    assert candidates[0]["auto_approve"] is True
+    approved = approved_companies(db)
+    assert len(approved) == 2
+    custom = next(item for item in approved if item["ats"] == "jsonld")
+    assert custom["urls"] == ["https://custom.fr/jobs"]
+    assert is_company_approved(custom)[0] is True
+    assert validate_vacancy_source("https://custom.fr/jobs/finance-analyst", custom)[0] is True
+    assert validate_vacancy_source("https://unrelated.example/jobs/finance-analyst", custom)[0] is False
     con.close()
 
 
