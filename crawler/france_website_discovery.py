@@ -280,7 +280,7 @@ def ingest_overture_release(con, release: str) -> dict:
         ddb.execute("SET s3_region='us-west-2'")
         source = OVERTURE_S3.format(release=release)
         query = f"""
-            SELECT id, names.primary AS place_name, websites,
+            SELECT id, names.primary AS place_name, brand.names.primary AS brand_name, websites,
                    addresses[1].freeform AS address,
                    addresses[1].locality AS locality,
                    addresses[1].postcode AS postcode,
@@ -298,20 +298,25 @@ def ingest_overture_release(con, release: str) -> dict:
             batch = cursor.fetchmany(BATCH_SIZE)
             if not batch:
                 break
-            for place_id, place_name, websites, address, locality, postcode, region, confidence in batch:
+            for place_id, place_name, brand_name, websites, address, locality, postcode, region, confidence in batch:
                 scanned += 1
-                if not place_name:
-                    continue
-                place_keys = name_keys(str(place_name))
                 matched = {}
-                for key in place_keys:
-                    for registry_id, method in name_index.get(key, {}).items():
-                        matched.setdefault(registry_id, method)
-                if not matched:
+                matched_name = None
+                for source_name in (place_name, brand_name):
+                    if not source_name:
+                        continue
+                    source_keys = name_keys(str(source_name))
+                    for key in source_keys:
+                        for registry_id, method in name_index.get(key, {}).items():
+                            matched.setdefault(registry_id, method)
+                            if matched_name is None:
+                                matched_name = str(source_name)
+                if not matched or not matched_name:
                     continue
                 matched_places += 1
                 best_method = "exact_legal_name" if "exact_legal_name" in matched.values() else "exact_trading_name"
-                normalized = min(place_keys, key=lambda key: (len(key), key))
+                matched_keys = name_keys(matched_name)
+                normalized = min(matched_keys, key=lambda key: (len(key), key))
                 website_values = websites if isinstance(websites, (list, tuple)) else [websites]
                 for website in website_values:
                     cleaned = _clean_candidate_url(str(website or ""))
