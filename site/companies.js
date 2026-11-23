@@ -12,6 +12,7 @@
   let activeController = null;
   let currentRecords = [];
   let shortlist = loadShortlist();
+  let verifiedWebsiteRecords = [];
 
   const EMPLOYEE_BANDS = {
     NN: "Not reported", "00": "0 employees", "01": "1–2 employees", "02": "3–5 employees",
@@ -324,6 +325,108 @@
     }
   }
 
+  function safeHttpsUrl(value) {
+    try {
+      const parsed = new URL(String(value || ""));
+      return parsed.protocol === "https:" ? parsed.href : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function renderVerifiedWebsiteCard(record) {
+    const card = node("article", "verified-website-card");
+    const heading = node("div", "verified-website-heading");
+    const identity = node("div", "");
+    identity.append(
+      node("h3", "", record.name || record.legal_name || "Company name not supplied"),
+      node("p", "company-lei", "SIREN " + String(record.siren || ""))
+    );
+    const verified = node("span", "state-pill active", "Legal notice matched");
+    heading.append(identity, verified);
+
+    const details = node("p", "verified-website-location",
+      [record.head_office_address, record.postcode, record.city, record.region].filter(Boolean).join(" · ")
+    );
+    const links = node("div", "verified-website-links");
+    const websiteUrl = safeHttpsUrl(record.official_website);
+    const registryUrl = safeHttpsUrl(record.registry_record);
+    if (websiteUrl) {
+      const website = node("a", "", "Open official website ↗");
+      website.href = websiteUrl;
+      website.target = "_blank";
+      website.rel = "noopener noreferrer";
+      links.append(website);
+    }
+    if (registryUrl) {
+      const registry = node("a", "", "Check French registry record ↗");
+      registry.href = registryUrl;
+      registry.target = "_blank";
+      registry.rel = "noopener noreferrer";
+      links.append(registry);
+    }
+    const proof = node("p", "verified-website-proof",
+      "Verification: " + (record.verification_method || "SIREN/SIRET matched in first-party legal notice") +
+      (record.verified_at ? " · Checked " + new Date(record.verified_at).toLocaleDateString("en-GB") : "")
+    );
+    card.append(heading, details, links, proof);
+    return card;
+  }
+
+  function renderVerifiedWebsites() {
+    const container = $("verified-websites-results");
+    const query = $("verified-website-query").value.trim().toLocaleLowerCase("fr");
+    container.replaceChildren();
+    const visible = verifiedWebsiteRecords.filter((record) => {
+      const haystack = [
+        record.name, record.legal_name, record.siren, record.official_website,
+        record.head_office_address, record.city, record.postcode, record.region,
+        record.activity_code
+      ].filter(Boolean).join(" ").toLocaleLowerCase("fr");
+      return !query || haystack.includes(query);
+    });
+    if (!verifiedWebsiteRecords.length) {
+      container.append(emptyState(
+        "No company websites have passed verification yet",
+        "This means the current discovery database has not found a matching SIREN/SIRET in an accessible first-party legal notice. It does not mean French employers have no websites."
+      ));
+      return;
+    }
+    if (!visible.length) {
+      container.append(emptyState("No verified website matches", "Try a different company name, city, SIREN or domain."));
+      return;
+    }
+    visible.slice(0, 100).forEach((record) => container.append(renderVerifiedWebsiteCard(record)));
+    if (visible.length > 100) {
+      container.append(node("p", "verified-website-proof",
+        "Showing 100 of " + visible.length.toLocaleString("en-GB") + " matches. Narrow your search to see more."
+      ));
+    }
+  }
+
+  async function loadVerifiedWebsites() {
+    const status = $("verified-websites-status");
+    try {
+      const response = await fetch("data/france-company-websites.json", {
+        method: "GET", headers: { Accept: "application/json" }, cache: "no-store"
+      });
+      if (!response.ok) throw new Error("Dataset returned HTTP " + response.status);
+      const payload = await response.json();
+      verifiedWebsiteRecords = Array.isArray(payload.companies) ? payload.companies : [];
+      status.textContent = verifiedWebsiteRecords.length.toLocaleString("en-GB") +
+        " verified French company websites · Source: Overture Maps candidate discovery + matching first-party legal notice";
+      status.className = "search-status";
+      renderVerifiedWebsites();
+    } catch (error) {
+      status.textContent = "The verified company website dataset is not available yet. " + error.message;
+      status.className = "search-status error";
+      $("verified-websites-results").replaceChildren(emptyState(
+        "Verified website dataset unavailable",
+        "The discovery workflow has not published its evidence-backed dataset yet."
+      ));
+    }
+  }
+
   function wireEvents() {
     $("company-search").addEventListener("submit", (event) => {
       event.preventDefault();
@@ -345,6 +448,7 @@
       });
     });
     $("employer-filter").addEventListener("change", renderResults);
+    $("verified-website-query").addEventListener("input", renderVerifiedWebsites);
     $("previous-page").addEventListener("click", () => { if (currentPage > 1) searchCompanies(currentPage - 1); });
     $("next-page").addEventListener("click", () => { if (currentPage < totalPages) searchCompanies(currentPage + 1); });
     $("export-shortlist").addEventListener("click", exportCsv);
@@ -358,6 +462,7 @@
   wireEvents();
   renderShortlist();
   updatePagination();
+  loadVerifiedWebsites();
   // No hard-coded sample company is searched on load. The first result set
   // must come from the visitor's own query or a sector shortcut.
 })();
