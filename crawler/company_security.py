@@ -206,6 +206,16 @@ def validate_vacancy_source(job_url: str, company: dict) -> tuple[bool, str | No
 
     if ats == "personio":
         allowed = host in {f"{slug}.jobs.personio.de", f"{slug}.jobs.personio.com"}
+    elif ats == "workable":
+        # Workable's account widget can return either the tenant-qualified URL
+        # (/account/j/SHORTCODE/...) or its canonical short URL (/j/SHORTCODE).
+        # The latter is safe here because the posting was fetched from this
+        # exact account's public widget endpoint above.
+        parts = [p for p in parsed.path.split("/") if p]
+        allowed = (host == "apply.workable.com" and (
+            (len(parts) >= 2 and parts[0].lower() == slug)
+            or (len(parts) >= 2 and parts[0].lower() == "j" and bool(parts[1]))
+        ))
     elif ats == "recruitee":
         allowed = host == f"{slug}.recruitee.com"
     elif ats == "teamtailor":
