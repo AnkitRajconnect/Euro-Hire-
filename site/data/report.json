@@ -1,11 +1,47 @@
 {
- "generated_at": "2026-11-23T16:33:09+00:00",
- "feeds_ok": 1,
- "feeds_total": 1,
- "jobs_published": 5,
+ "generated_at": "2026-11-23T19:04:10+00:00",
+ "feeds_ok": 3,
+ "feeds_total": 6,
+ "jobs_published": 9,
  "jobs_rejected": 4,
- "jobs_held_for_review": 1,
+ "jobs_held_for_review": 36,
  "companies": [
+  {
+   "company": "REGOURD AVIATION",
+   "slug": "fr-309446276",
+   "ats": "recruitee",
+   "ok": false,
+   "raw": 0,
+   "kept": 0,
+   "rejected": 0,
+   "review": 0,
+   "reasons": {},
+   "error": "403 from https://careers-analytics.recruitee.com/api/offers/"
+  },
+  {
+   "company": "TEREGA",
+   "slug": "fr-095580841",
+   "ats": "workday",
+   "ok": false,
+   "raw": 0,
+   "kept": 0,
+   "rejected": 0,
+   "review": 0,
+   "reasons": {},
+   "error": "robots.txt disallows Workday job feed: https://terega.wd3.myworkdayjobs.com/wday/cxs/terega/Sitecarriereterega/jobs"
+  },
+  {
+   "company": "VANTIVA",
+   "slug": "fr-333773174",
+   "ats": "workday",
+   "ok": false,
+   "raw": 0,
+   "kept": 0,
+   "rejected": 0,
+   "review": 0,
+   "reasons": {},
+   "error": "robots.txt disallows Workday job feed: https://vantiva.wd103.myworkdayjobs.com/wday/cxs/vantiva/vantiva/jobs"
+  },
   {
    "company": "Hugging Face",
    "slug": "huggingface",
@@ -18,6 +54,34 @@
    "reasons": {
     "outside Europe or occupation not in launch taxonomy": 4,
     "occupation is not in the approved professional-role taxonomy": 1
+   },
+   "error": null
+  },
+  {
+   "company": "STIF FRANCE",
+   "slug": "fr-328876503",
+   "ats": "teamtailor",
+   "ok": true,
+   "raw": 3,
+   "kept": 0,
+   "rejected": 0,
+   "review": 3,
+   "reasons": {
+    "occupation is not in the approved professional-role taxonomy": 3
+   },
+   "error": null
+  },
+  {
+   "company": "TANG FRERES",
+   "slug": "fr-306243833",
+   "ats": "teamtailor",
+   "ok": true,
+   "raw": 36,
+   "kept": 4,
+   "rejected": 0,
+   "review": 32,
+   "reasons": {
+    "occupation is not in the approved professional-role taxonomy": 32
    },
    "error": null
   }
