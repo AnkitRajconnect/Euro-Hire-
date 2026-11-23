@@ -185,4 +185,9 @@ def test_public_export_contains_only_verified_same_company_websites(tmp_path):
     assert payload["companies"][0]["siren"] == "123456789"
     assert payload["companies"][0]["official_website"] == "https://candidate.fr/"
     assert payload["companies"][0]["verification_method"].startswith("Matching SIREN/SIRET")
+    assert payload["companies"][0]["evidence"]["legal_notice_url"] == "https://candidate.fr/mentions-legales"
+    stored_proof = con.execute(
+        "SELECT verified_legal_notice_url FROM france_website_candidates"
+    ).fetchone()
+    assert stored_proof["verified_legal_notice_url"] == "https://candidate.fr/mentions-legales"
     con.close()
