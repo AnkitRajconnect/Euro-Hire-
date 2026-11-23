@@ -1153,7 +1153,10 @@ def import_fr_stock_file(con: sqlite3.Connection, path: Path, mapping_path: Path
         con.rollback()
         raise ValueError("SIRENE stock import produced zero eligible legal entities; previous snapshot was preserved")
     con.commit()
-    return count(db: Path = DEFAULT_DB) -> list[dict]:
+    return count
+
+
+def approved_companies(db: Path = DEFAULT_DB) -> list[dict]:
     if not db.exists():
         return []
     con = connect(db)
