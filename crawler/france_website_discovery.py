@@ -592,6 +592,152 @@ def ingest_overture_release(con, release: str) -> dict:
     }
 
 
+def ingest_wikidata_siren_websites(con, http: Http, *, pages: int = 3,
+                                   page_size: int = WIKIDATA_PAGE_SIZE) -> dict:
+    """Discover candidate websites using Wikidata's exact SIREN-to-website links.
+
+    Wikidata is only a discovery source: every domain must still pass the
+    first-party French legal-notice check before being marked verified.
+    """
+    ensure_discovery_schema(con)
+    pages = max(1, min(int(pages), 10))
+    page_size = max(25, min(int(page_size), 500))
+    state = con.execute(
+        "SELECT next_offset FROM france_external_discovery_cursor WHERE source='wikidata'"
+    ).fetchone()
+    offset = int(state["next_offset"]) if state else 0
+    totals = {
+        "pages_queried": 0,
+        "wikidata_rows": 0,
+        "matched_french_employers": 0,
+        "candidate_domains_added_or_updated": 0,
+        "unmatched_siren_rows": 0,
+        "invalid_or_blocked_websites": 0,
+    }
+
+    for _ in range(pages):
+        query = (
+            'PREFIX wd: <http://www.wikidata.org/entity/>\\n'
+            'PREFIX wdt: <http://www.wikidata.org/prop/direct/>\\n'
+            'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>\\n'
+            'SELECT ?company ?siren ?website ?label WHERE {\\n'
+            '  ?company wdt:P17 wd:Q142 ; wdt:P1616 ?siren ; wdt:P856 ?website .\\n'
+            '  OPTIONAL { ?company rdfs:label ?label . FILTER(LANG(?label) = "fr") }\\n'
+            '  FILTER(REGEX(REPLACE(STR(?siren), "[^0-9]", ""), "^[0-9]{9}$"))\\n'
+            '}\\n'
+            'ORDER BY STR(?siren) STR(?company) STR(?website)\\n'
+            'LIMIT ' + str(page_size) + '\\nOFFSET ' + str(offset)
+        )
+        payload = http.get_json(
+            WIKIDATA_SPARQL,
+            params={"query": query, "format": "json"},
+            headers={"Accept": "application/sparql-results+json"},
+        )
+        bindings = (((payload or {}).get("results") or {}).get("bindings") or [])
+        if not isinstance(bindings, list):
+            raise RuntimeError("Wikidata SPARQL response did not contain a bindings list")
+        totals["pages_queried"] += 1
+        totals["wikidata_rows"] += len(bindings)
+        if not bindings:
+            offset = 0
+            break
+
+        for binding in bindings:
+            siren_raw = str((binding.get("siren") or {}).get("value") or "")
+            siren = re.sub(r"\D", "", siren_raw)
+            if len(siren) != 9:
+                totals["unmatched_siren_rows"] += 1
+                continue
+            company = con.execute(
+                """SELECT registry_id,legal_name,trading_name
+                   FROM companies
+                   WHERE country='FR' AND registry_id=?
+                     AND registry_status='active' AND legal_person=1
+                     AND json_extract(raw_json, '$.employer_scope')='employer'""",
+                (siren,),
+            ).fetchone()
+            if not company:
+                totals["unmatched_siren_rows"] += 1
+                continue
+
+            website = str((binding.get("website") or {}).get("value") or "").strip()
+            cleaned = _clean_candidate_url(website)
+            if not cleaned:
+                totals["invalid_or_blocked_websites"] += 1
+                continue
+            candidate_url, domain = cleaned
+            qid = str((binding.get("company") or {}).get("value") or "").rstrip("/").split("/")[-1]
+            label = str((binding.get("label") or {}).get("value") or "").strip()
+            display_name = label or company["trading_name"] or company["legal_name"]
+            keys = name_keys(company["legal_name"]) or name_keys(display_name)
+            normalized = min(keys, key=lambda key: (len(key), key)) if keys else display_name.casefold()
+            matched_name = {
+                "value": display_name,
+                "language": "fr" if label else None,
+                "variant": "wikidata_label" if label else "registry_name",
+                "source_field": "wikidata.rdfs:label" if label else "sirene.legal_name",
+                "registry_id": siren,
+                "registry_match_method": "exact_siren_property_p1616",
+            }
+            source_evidence = [{
+                "provider": "Wikidata",
+                "dataset": "Wikidata knowledge graph",
+                "license": "CC0-1.0",
+                "record_id": qid,
+                "identity_property": "P1616 (SIREN)",
+                "website_property": "P856 (official website)",
+            }]
+            before = con.total_changes
+            _upsert_candidate(
+                con,
+                place_id="wikidata:" + qid,
+                place_name=display_name,
+                website_url=candidate_url,
+                domain=domain,
+                normalized_name=normalized,
+                registry_ids=[siren],
+                match_method="wikidata_siren_property",
+                address=None,
+                locality=None,
+                postcode=None,
+                region=None,
+                confidence=None,
+                release="wikidata-live",
+                matched_names=[matched_name],
+                source_evidence=source_evidence,
+                place_category=None,
+            )
+            if con.total_changes > before:
+                totals["candidate_domains_added_or_updated"] += 1
+            totals["matched_french_employers"] += 1
+
+        offset += len(bindings)
+        if len(bindings) < page_size:
+            offset = 0
+            break
+        con.execute(
+            """INSERT INTO france_external_discovery_cursor(source,next_offset,updated_at)
+               VALUES('wikidata',?,?)
+               ON CONFLICT(source) DO UPDATE SET next_offset=excluded.next_offset,
+                   updated_at=excluded.updated_at""",
+            (offset, now_iso()),
+        )
+        con.commit()
+
+    con.execute(
+        """INSERT INTO france_external_discovery_cursor(source,next_offset,updated_at)
+           VALUES('wikidata',?,?)
+           ON CONFLICT(source) DO UPDATE SET next_offset=excluded.next_offset,
+               updated_at=excluded.updated_at""",
+        (offset, now_iso()),
+    )
+    con.commit()
+    totals["next_offset"] = offset
+    totals["source"] = "Wikidata (P1616 SIREN + P856 official website)"
+    return totals
+
+
+
 class _PageParser(HTMLParser):
     def __init__(self):
         super().__init__()
