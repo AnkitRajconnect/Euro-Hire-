@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 PUBLIC_ATS = {
     "greenhouse", "lever", "ashby", "personio", "recruitee", "workable",
     "smartrecruiters", "teamtailor", "workday", "breezy", "pinpoint",
-    "bamboohr", "jazzhr", "keka", "homerun",
+    "bamboohr", "jazzhr", "keka", "homerun", "gem", "rippling",
 }
 
 SCAM_REVIEW_RE = re.compile(r"\b(whatsapp|telegram|signal|personal gmail|text me|dm me)\b", re.I)
@@ -37,7 +37,8 @@ def is_https_url(value: str | None) -> bool:
 
 def board_matches(company: dict) -> bool:
     ats = company.get("ats")
-    slug = str(company.get("ats_slug") or company.get("slug") or "").lower()
+    raw_slug = str(company.get("ats_slug") or company.get("slug") or "")
+    slug = raw_slug.lower()
     board_url = company.get("board_url") or ""
     if ats not in PUBLIC_ATS or not slug or not is_https_url(board_url):
         return False
@@ -62,10 +63,10 @@ def board_matches(company: dict) -> bool:
         return host == slug + ".teamtailor.com"
     if ats == "workday":
         try:
-            tenant, region, site, locale = slug.split("|", 3)
+            tenant, region, site, locale = raw_slug.split("|", 3)
         except ValueError:
             return False
-        return host == tenant + "." + region + ".myworkdayjobs.com" and site in parts
+        return host == tenant.lower() + "." + region.lower() + ".myworkdayjobs.com" and site in parts
     if ats == "breezy":
         return host == slug + ".breezy.hr"
     if ats == "pinpoint":
@@ -78,6 +79,10 @@ def board_matches(company: dict) -> bool:
         return host == slug + ".keka.com"
     if ats == "homerun":
         return host == "feed.homerun.co" and bool(parts) and parts[0].lower() == slug
+    if ats == "gem":
+        return host == "jobs.gem.com" and bool(parts) and parts[0].lower() == slug
+    if ats == "rippling":
+        return host == "ats.rippling.com" and bool(parts) and parts[0].lower() == slug and len(parts) >= 2 and parts[1] == "jobs"
     return False
 
 
@@ -136,6 +141,10 @@ def validate_vacancy_source(url: str, company: dict, trusted_feed: bool = False)
         return host == slug + ".keka.com", None
     if ats == "homerun":
         return host == "feed.homerun.co" and bool(parts) and parts[0].lower() == slug, None
+    if ats == "gem":
+        return host == "jobs.gem.com" and bool(parts) and parts[0].lower() == slug, None
+    if ats == "rippling":
+        return host == "ats.rippling.com" and bool(parts) and parts[0].lower() == slug and len(parts) >= 2 and parts[1] == "jobs", None
     return False, "unsupported public ATS"
 
 

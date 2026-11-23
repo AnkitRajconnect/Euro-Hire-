@@ -20,13 +20,15 @@ The code supports public, unauthenticated job-listing routes for:
 - Personio XML feed, when the employer has enabled it
 - Teamtailor public RSS
 - Workday public career-site search endpoint
-- Recruitee public offers route (the vendor has announced a token requirement from 10 February 2027; this adapter may stop working unless a non-token public feed remains available)
+- Recruitee public offers route (automatically disabled from 10 February 2027 because the vendor requires an employer token)
 - Pinpoint public postings.json
 - BambooHR public careers list
 - JazzHR public XML job export
 - Breezy HR public careers JSON
 - Keka public career portal feed
 - Homerun public Atom feed
+- Gem Job Board API: public job-post reads; application submission is not used
+- Rippling public hosted-board jobs feed
 
 No paid job-data provider is used. Private ATS APIs that require employer credentials, a paid account or OAuth approval are excluded. A public feed can still be disabled by an employer, and the provider can change the interface. Failed feeds are reported independently instead of blocking other companies.
 

@@ -18,7 +18,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from urllib.parse import urljoin
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from .http import FetchError
 
@@ -491,6 +491,72 @@ def keka(slug, http, **_):
     return out
 
 
+
+def gem(slug, http, **_):
+    # Gem documents public GET job-board routes. Only application submission
+    # requires an API key; Euro-Hire never calls that endpoint.
+    payload = http.get_json(f"https://api.gem.com/job_board/v0/{slug}/job_posts/")
+    out = []
+    for job in _board_items(payload, "job_posts", "jobs", "data"):
+        job_id = str(job.get("id") or job.get("job_post_id") or "")
+        title = job.get("title") or job.get("name") or ""
+        if not job_id or not title:
+            continue
+        url = job.get("job_url") or job.get("job_post_url") or job.get("url")
+        if not url:
+            url = f"https://jobs.gem.com/{slug}/job_posts/{job_id}"
+        location = _plain(job.get("locations") or job.get("location") or job.get("office"))
+        location_type = str(job.get("location_type") or "").lower()
+        out.append({
+            "id": job_id, "title": title, "url": url,
+            "location": location,
+            "department": _plain(job.get("department") or job.get("team")),
+            "posted": _date(job.get("first_published_at") or job.get("published_at") or job.get("created_at")),
+            "description": strip_html(job.get("description_html") or job.get("description_text") or job.get("description")),
+            "remote": True if "remote" in location_type else None,
+        })
+    return out
+
+
+def rippling(slug, http, **_):
+    # Public hosted-board JSON only; no private Recruiting API credentials.
+    endpoint = f"https://ats.rippling.com/api/v2/board/{slug}/jobs"
+    page = 0
+    out = []
+    while page < 50:
+        try:
+            payload = http.get_json(endpoint, params={"page": page})
+        except FetchError as v2_error:
+            if page:
+                raise
+            # Some live boards still expose the v1 public read route.
+            try:
+                payload = http.get_json(
+                    f"https://api.rippling.com/platform/api/ats/v1/board/{slug}/jobs"
+                )
+            except FetchError:
+                raise v2_error
+        rows = _board_items(payload, "jobs", "results", "data", "items")
+        for job in rows:
+            job_id = str(job.get("uuid") or job.get("id") or job.get("jobId") or "")
+            title = job.get("name") or job.get("title") or ""
+            if not job_id or not title:
+                continue
+            url = job.get("url") or job.get("jobUrl") or f"https://ats.rippling.com/{slug}/jobs/{job_id}"
+            location = _plain(job.get("workLocation") or job.get("location") or job.get("locations"))
+            out.append({
+                "id": job_id, "title": title, "url": url,
+                "location": location,
+                "department": _plain(job.get("department") or job.get("departmentName")),
+                "posted": _date(job.get("publishedAt") or job.get("createdAt")),
+                "description": strip_html(job.get("description") or job.get("jobDescription")),
+                "remote": True if job.get("remote") or job.get("isRemote") else None,
+            })
+        if len(rows) < 1000:
+            break
+        page += 1
+    return out
+
 def homerun(slug, http, **_):
     text = http.get_text(f"https://feed.homerun.co/{slug}")
     try:
@@ -538,5 +604,7 @@ ADAPTERS = {
     "jazzhr": jazzhr,
     "keka": keka,
     "homerun": homerun,
+    "gem": gem,
+    "rippling": rippling,
     "jsonld": jsonld,
 }

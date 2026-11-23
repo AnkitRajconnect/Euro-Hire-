@@ -183,6 +183,8 @@ def _public_board(ats="greenhouse", slug="sample-employer", hq="DE"):
         "jazzhr": f"https://app.jazz.co/feeds/export/jobs/{slug}",
         "keka": f"https://{slug}.keka.com/careers",
         "homerun": f"https://feed.homerun.co/{slug}",
+        "gem": f"https://jobs.gem.com/{slug}",
+        "rippling": f"https://ats.rippling.com/{slug}/jobs",
     }
     return {
         "name": "Sample Employer", "slug": slug, "ats_slug": slug,
@@ -209,6 +211,8 @@ def test_board_discovery_extracts_providers_without_company_whitelist():
         ("jazzhr", "https://sample-employer.applytojob.com/apply"),
         ("keka", "https://sample-employer.keka.com/careers"),
         ("homerun", "https://feed.homerun.co/sample-employer"),
+        ("gem", "https://jobs.gem.com/sample-employer"),
+        ("rippling", "https://ats.rippling.com/sample-employer/jobs"),
     ]
     for provider, url in examples:
         found = extract_board(provider, url)
@@ -255,6 +259,8 @@ def test_new_public_board_adapters():
             '<a href="/ats/documents/123e4567-e89b-12d3-a456-426614174000/careerportal">Careers</a>'),
         "https://sample.keka.com/careers/api/embedjobs/default/active/123e4567-e89b-12d3-a456-426614174000": [
             {"jobId": "k1", "title": "Consultant", "location": "Paris"}],
+        "https://api.gem.com/job_board/v0/sample/job_posts/": [{"id": "g1", "title": "Recruiter", "job_url": "https://jobs.gem.com/sample/job_posts/g1", "location": "Paris"}],
+        "https://ats.rippling.com/api/v2/board/sample/jobs": {"jobs": [{"uuid": "r1", "name": "Account Manager", "url": "https://ats.rippling.com/sample/jobs/r1", "workLocation": "Berlin"}]},
         "https://feed.homerun.co/sample": (
             '<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>h1</id><title>Designer</title>'
             '<link href="https://feed.homerun.co/sample/jobs/h1"/><summary>Design</summary></entry></feed>'),
@@ -266,6 +272,8 @@ def test_new_public_board_adapters():
     assert adapters.jazzhr("sample", http)[0]["title"] == "Analyst"
     assert adapters.keka("sample", http)[0]["id"] == "k1"
     assert adapters.homerun("sample", http)[0]["title"] == "Designer"
+    assert adapters.gem("sample", http)[0]["id"] == "g1"
+    assert adapters.rippling("sample", http)[0]["id"] == "r1"
 
 
 def test_europe_remote_is_accepted_when_location_is_explicit():

@@ -33,6 +33,8 @@ SEARCHES = [
     ("jazzhr", "*.applytojob.com", r"^https?://[a-z0-9-]+\.applytojob\.com/apply/?$"),
     ("keka", "*.keka.com", r"^https?://[a-z0-9-]+\.keka\.com/careers/?$"),
     ("homerun", "feed.homerun.co/*", r"^https?://feed\.homerun\.co/[a-z0-9-]+/?$"),
+    ("gem", "jobs.gem.com/*", r"^https?://jobs\.gem\.com/[a-z0-9-]+/?$"),
+    ("rippling", "ats.rippling.com/*", r"^https?://ats\.rippling\.com/[a-z0-9-]+/jobs/?$"),
 ]
 
 RESERVED = {"api", "www", "jobs", "careers", "embed", "company", "companies",
@@ -102,6 +104,10 @@ def extract_board(ats: str, value: str) -> dict | None:
                 return _record(ats, tenant, f"https://{host}{path}")
     if ats == "homerun" and host == "feed.homerun.co" and parts:
         return _record(ats, parts[0], f"https://{host}/{parts[0]}")
+    if ats == "gem" and host == "jobs.gem.com" and parts:
+        return _record(ats, parts[0], f"https://{host}/{parts[0]}")
+    if ats == "rippling" and host == "ats.rippling.com" and len(parts) >= 2 and parts[1] == "jobs":
+        return _record(ats, parts[0], f"https://{host}/{parts[0]}/jobs")
     return None
 
 
