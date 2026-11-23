@@ -17,6 +17,7 @@ import html
 import json
 import re
 import xml.etree.ElementTree as ET
+from urllib.parse import urljoin
 from datetime import datetime, timezone
 
 from .http import FetchError
@@ -347,6 +348,180 @@ def jsonld(slug, http, urls=None, **_):
     return out
 
 
+
+# Public board endpoints beyond the first launch set.
+# None of these functions uses an employer API key or private recruiting token.
+
+def _board_items(payload, *keys):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def _plain(value):
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return ", ".join(str(value.get(k)) for k in ("name", "city", "region", "country") if value.get(k))
+    if isinstance(value, list):
+        return ", ".join(part for part in (_plain(x) for x in value) if part)
+    return str(value)
+
+
+def breezy(slug, http, **_):
+    payload = http.get_json(f"https://{slug}.breezy.hr/json")
+    out = []
+    for job in _board_items(payload, "jobs", "positions"):
+        title = job.get("name") or job.get("title") or ""
+        job_id = str(job.get("id") or job.get("position_id") or "")
+        if not title or not job_id:
+            continue
+        url = job.get("url") or job.get("career_url") or f"https://{slug}.breezy.hr/p/{job_id}"
+        out.append({
+            "id": job_id, "title": title, "url": url,
+            "location": _plain(job.get("location") or job.get("locations")),
+            "department": job.get("department") or job.get("team"),
+            "posted": _date(job.get("published_at") or job.get("created_at")),
+            "description": strip_html(job.get("description")),
+            "remote": True if job.get("remote") else None,
+        })
+    return out
+
+
+def pinpoint(slug, http, **_):
+    base = f"https://{slug}.pinpointhq.com"
+    payload = http.get_json(f"{base}/postings.json")
+    out = []
+    for job in _board_items(payload, "postings", "jobs", "data"):
+        job_id = str(job.get("id") or job.get("job_id") or "")
+        title = job.get("title") or job.get("name") or ""
+        if not job_id or not title:
+            continue
+        url = job.get("url") or job.get("posting_url") or f"{base}/postings/{job_id}"
+        out.append({
+            "id": job_id, "title": title, "url": urljoin(base, url),
+            "location": _plain(job.get("location") or job.get("locations")),
+            "department": job.get("department") or job.get("team"),
+            "posted": _date(job.get("published_at") or job.get("created_at")),
+            "description": strip_html(job.get("description") or job.get("content")),
+            "remote": True if job.get("remote") else None,
+        })
+    return out
+
+
+def bamboohr(slug, http, **_):
+    payload = http.get_json(f"https://{slug}.bamboohr.com/careers/list",
+                            headers={"Accept": "application/json"})
+    out = []
+    for job in _board_items(payload, "result", "jobs", "positions"):
+        job_id = str(job.get("id") or job.get("jobId") or "")
+        title = job.get("jobOpeningName") or job.get("title") or job.get("name") or ""
+        if not job_id or not title:
+            continue
+        url = job.get("url") or job.get("jobUrl") or f"https://{slug}.bamboohr.com/careers/{job_id}"
+        out.append({
+            "id": job_id, "title": title, "url": urljoin(f"https://{slug}.bamboohr.com", url),
+            "location": _plain(job.get("location") or job.get("locationName")),
+            "department": job.get("departmentLabel") or job.get("department"),
+            "posted": _date(job.get("datePosted") or job.get("createdAt")),
+            "description": strip_html(job.get("description") or job.get("jobDescription")),
+        })
+    return out
+
+
+def jazzhr(slug, http, **_):
+    text = http.get_text(f"https://app.jazz.co/feeds/export/jobs/{slug}")
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise FetchError(f"invalid JazzHR XML for {slug}: {exc}") from exc
+    out = []
+    for node in root.iter():
+        if node.tag.split("}")[-1].lower() != "job":
+            continue
+        fields = {child.tag.split("}")[-1].lower(): (child.text or "").strip() for child in node}
+        job_id = fields.get("id") or fields.get("jobid") or fields.get("job_id")
+        title = fields.get("title") or fields.get("name") or ""
+        if not job_id or not title:
+            continue
+        url = fields.get("url") or fields.get("applyurl") or f"https://{slug}.applytojob.com/apply/{job_id}"
+        out.append({
+            "id": str(job_id), "title": title, "url": url,
+            "location": fields.get("location") or ", ".join(
+                value for value in (fields.get("city"), fields.get("state"), fields.get("country")) if value),
+            "department": fields.get("department"),
+            "posted": _date(fields.get("dateposted") or fields.get("createdat")),
+            "description": strip_html(fields.get("description")),
+        })
+    return out
+
+
+def keka(slug, http, **_):
+    careers_url = f"https://{slug}.keka.com/careers"
+    if not http.allowed_by_robots(careers_url):
+        raise FetchError(f"robots.txt disallows Keka career page: {careers_url}")
+    page = http.get_text(careers_url)
+    match = re.search(r"/ats/documents/([a-f0-9-]+)/careerportal", page, re.I)
+    if not match:
+        raise FetchError(f"Keka public career-feed identifier not found for {slug}")
+    feed_url = f"https://{slug}.keka.com/careers/api/embedjobs/default/active/{match.group(1)}"
+    payload = http.get_json(feed_url)
+    out = []
+    for job in _board_items(payload, "jobs", "data", "result"):
+        job_id = str(job.get("id") or job.get("jobId") or job.get("jobOpeningId") or "")
+        title = job.get("title") or job.get("jobTitle") or ""
+        if not job_id or not title:
+            continue
+        out.append({
+            "id": job_id, "title": title,
+            "url": job.get("url") or f"https://{slug}.keka.com/careers/jobdetails/{job_id}",
+            "location": _plain(job.get("location") or job.get("locations")),
+            "department": job.get("department") or job.get("departmentName"),
+            "posted": _date(job.get("postedAt") or job.get("createdAt")),
+            "description": strip_html(job.get("description") or job.get("jobDescription")),
+            "remote": True if job.get("isRemote") or job.get("remote") else None,
+        })
+    return out
+
+
+def homerun(slug, http, **_):
+    text = http.get_text(f"https://feed.homerun.co/{slug}")
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError as exc:
+        raise FetchError(f"invalid Homerun feed for {slug}: {exc}") from exc
+    out = []
+    for entry in root.iter():
+        if entry.tag.split("}")[-1].lower() != "entry":
+            continue
+        title = (entry.findtext("{*}title") or "").strip()
+        job_id = (entry.findtext("{*}id") or "").strip()
+        link = ""
+        for node in entry.iter():
+            if node.tag.split("}")[-1].lower() == "link":
+                link = node.attrib.get("href") or (node.text or "").strip()
+                if link:
+                    break
+        if not title or not link:
+            continue
+        out.append({
+            "id": job_id or link, "title": title, "url": link,
+            "location": "", "posted": _date(entry.findtext("{*}published") or entry.findtext("{*}updated")),
+            "description": strip_html(entry.findtext("{*}content") or entry.findtext("{*}summary")),
+        })
+    return out
+
+
+# Include an explicit allowlist of public, no-key board readers. Token-only
+# corporate APIs (for example, Zoho Recruit and Freshteam private APIs) are not included.
+
 ADAPTERS = {
     "greenhouse": greenhouse,
     "lever": lever,
@@ -357,5 +532,11 @@ ADAPTERS = {
     "smartrecruiters": smartrecruiters,
     "teamtailor": teamtailor,
     "workday": workday,
+    "breezy": breezy,
+    "pinpoint": pinpoint,
+    "bamboohr": bamboohr,
+    "jazzhr": jazzhr,
+    "keka": keka,
+    "homerun": homerun,
     "jsonld": jsonld,
 }

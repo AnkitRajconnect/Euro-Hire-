@@ -181,7 +181,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
     if place is None:
         # A generic remote job is included only where the employer is based in
         # Europe. Remote-Europe roles from elsewhere are already mapped to EU.
-        if not remote or str(company.get("hq") or "").upper() not in geo.EUROPE:
+        if not remote or (not EUROPE_REMOTE_RE.search(location_blob) and str(company.get("hq") or "").upper() not in geo.EUROPE):
             return None
         _, latitude, longitude, _ = geo.COUNTRIES["EU"]
         place = {"city": None, "country": "EU", "lat": latitude, "lon": longitude}
@@ -190,7 +190,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
     role, level = classify(title, raw.get("department"))
     salary = find_salary(description[:6000] + " " + location_text)
     language = detect_language(description[:1500] or title)
-    company_key = company.get("company_key") or company["slug"]
+    company_key = company.get("company_key") or (company["ats"] + ":" + company["slug"])
     if place["city"]:
         display_city = place["city"]
     elif place["country"] == "EU":
@@ -202,7 +202,7 @@ def normalize(raw: dict, company: dict, now_iso: str) -> dict | None:
 
     return {
         "id": f"{company['ats']}:{company_key}:{raw['id']}",
-        "company": company["name"],
+        "company": raw.get("company_name") or company["name"],
         "company_slug": company.get("slug") or company_key,
         "career_source_verified": True,
         "source_last_checked": now_iso,

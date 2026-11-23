@@ -10,7 +10,7 @@ from urllib import robotparser
 import requests
 
 CONTACT = os.environ.get("EUROHIRE_CONTACT") or os.environ.get("GULLYHIRE_CONTACT", "set-EUROHIRE_CONTACT-env-var")
-USER_AGENT = f"EuroHireBot/0.3 (+France employer website discovery; contact: {CONTACT})"
+USER_AGENT = f"EuroHireBot/0.4 (+public ATS board discovery and Europe job indexing; contact: {CONTACT})"
 
 
 class FetchError(Exception):

@@ -1,4 +1,4 @@
-name: Euro-Hire daily job feed and website
+name: Euro-Hire public ATS crawler and website
 
 on:
   push:
@@ -19,7 +19,7 @@ concurrency:
 jobs:
   crawl-and-package:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -33,29 +33,29 @@ jobs:
       - name: Install crawler dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
-      - name: Run tests and validate the site JavaScript
+      - name: Run offline tests and validate site JavaScript
         run: |
           python -m pytest -q
           node --check site/app.js
 
-      - name: Read public employer career boards
-        run: >-
-          python -m crawler.crawl
-          --companies companies.yaml
-          --review-out /tmp/eurohire-review-queue.json
-          --out site/data
-          --workers 6
+      - name: Discover public ATS boards without an employer allowlist
+        run: |
+          python -m crawler.source_discovery --out site/data/boards.json --max-per-pattern 10000 --refresh-days 7
 
-      - name: Save live job data
+      - name: Read public job feeds across discovered boards
+        run: |
+          python -m crawler.crawl --boards site/data/boards.json --max-boards 5000 --review-out /tmp/eurohire-review-queue.json --out site/data --workers 8
+
+      - name: Save generated board index and live jobs
         run: |
           git config user.name 'eurohire-bot'
           git config user.email 'eurohire-bot@users.noreply.github.com'
-          git add site/data/jobs.json site/data/report.json
+          git add site/data/boards.json site/data/jobs.json site/data/report.json
           if ! git diff --cached --quiet; then
-            git commit -m "Refresh Europe job feed $(date -u +%F)"
+            git commit -m "Refresh public ATS boards and Europe jobs $(date -u +%F)"
             git push
           else
-            echo 'Live job data did not change.'
+            echo 'Public board index and live jobs did not change.'
           fi
 
       - name: Keep held vacancies for owner review (not published)
@@ -85,7 +85,7 @@ jobs:
       actions: read
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: \${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Publish Euro-Hire
         id: deployment

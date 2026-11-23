@@ -6,6 +6,7 @@ from pathlib import Path
 from crawler import adapters, discover, geo
 from crawler.company_security import is_company_approved, screen_vacancy, validate_vacancy_source
 from crawler.crawl import crawl_company, load_companies, merge
+from crawler.source_discovery import extract_board
 from crawler.http import FetchError
 from crawler.normalize import detect_language, find_salary, normalize
 
@@ -160,3 +161,110 @@ def test_public_job_file_contains_no_sample_jobs():
     assert payload.get("demo") is False
     assert payload.get("count") == len(payload.get("jobs", []))
     assert all("Northwind Labs" not in str(job.get("company", "")) for job in payload["jobs"])
+
+
+def _public_board(ats="greenhouse", slug="sample-employer", hq="DE"):
+    urls = {
+        "greenhouse": f"https://boards.greenhouse.io/{slug}",
+        "lever": f"https://jobs.lever.co/{slug}",
+        "ashby": f"https://jobs.ashbyhq.com/{slug}",
+        "workable": f"https://apply.workable.com/{slug}",
+        "smartrecruiters": f"https://jobs.smartrecruiters.com/{slug}",
+        "personio": f"https://{slug}.jobs.personio.de/xml?language=en",
+        "recruitee": f"https://{slug}.recruitee.com/api/offers/",
+        "teamtailor": f"https://{slug}.teamtailor.com/jobs.rss",
+        "breezy": f"https://{slug}.breezy.hr/",
+        "pinpoint": f"https://{slug}.pinpointhq.com/postings.json",
+        "bamboohr": f"https://{slug}.bamboohr.com/careers/list",
+        "jazzhr": f"https://app.jazz.co/feeds/export/jobs/{slug}",
+        "keka": f"https://{slug}.keka.com/careers",
+        "homerun": f"https://feed.homerun.co/{slug}",
+    }
+    return {
+        "name": "Sample Employer", "slug": slug, "ats_slug": slug,
+        "company_key": ats + ":" + slug, "ats": ats, "hq": hq,
+        "board_url": urls[ats],
+        "verification": {"mode": "discovered_public_ats", "status": "approved"},
+    }
+
+
+def test_board_discovery_extracts_providers_without_company_whitelist():
+    examples = [
+        ("greenhouse", "https://boards.greenhouse.io/sample-employer"),
+        ("lever", "https://jobs.lever.co/sample-employer"),
+        ("ashby", "https://jobs.ashbyhq.com/sample-employer"),
+        ("workable", "https://apply.workable.com/sample-employer"),
+        ("smartrecruiters", "https://jobs.smartrecruiters.com/sample-employer"),
+        ("personio", "https://sample-employer.jobs.personio.de"),
+        ("recruitee", "https://sample-employer.recruitee.com"),
+        ("teamtailor", "https://sample-employer.teamtailor.com/jobs"),
+        ("workday", "https://sample-employer.wd5.myworkdayjobs.com/en-US/Careers"),
+        ("breezy", "https://sample-employer.breezy.hr"),
+        ("pinpoint", "https://sample-employer.pinpointhq.com/postings.json"),
+        ("bamboohr", "https://sample-employer.bamboohr.com/careers/list"),
+        ("jazzhr", "https://sample-employer.applytojob.com/apply"),
+        ("keka", "https://sample-employer.keka.com/careers"),
+        ("homerun", "https://feed.homerun.co/sample-employer"),
+    ]
+    for provider, url in examples:
+        found = extract_board(provider, url)
+        assert found and found["ats"] == provider
+        assert found["slug"]
+
+
+def test_company_gate_validates_provider_and_board_not_company_name():
+    company = _public_board()
+    assert is_company_approved(company) == (True, None)
+    wrong = {**company, "board_url": "https://boards.greenhouse.io/someone-else"}
+    assert is_company_approved(wrong)[0] is False
+
+
+def test_untrusted_wrong_board_url_is_rejected_but_feed_returned_apply_url_is_allowed():
+    from crawler.company_security import validate_vacancy_source
+    company = _public_board()
+    assert not validate_vacancy_source("https://boards.greenhouse.io/another-company/jobs/1", company)[0]
+    assert validate_vacancy_source(
+        "https://careers.sample-employer.example/jobs/1", company, trusted_feed=True
+    )[0]
+
+
+def test_loader_uses_board_index_json_not_companies_yaml(tmp_path):
+    board_path = tmp_path / "boards.json"
+    board_path.write_text(json.dumps({"source": "Common Crawl", "boards": [
+        _public_board(), _public_board("ashby", "another-employer")
+    ]}), encoding="utf-8")
+    items = load_companies(board_path)
+    assert len(items) == 2
+    assert {item["ats"] for item in items} == {"greenhouse", "ashby"}
+
+
+def test_new_public_board_adapters():
+    routes = {
+        "https://sample.breezy.hr/json": [{"id": "b1", "name": "Sales Manager", "location": "Paris"}],
+        "https://sample.pinpointhq.com/postings.json": {"postings": [
+            {"id": "p1", "title": "Account Executive", "url": "/postings/p1", "location": "Brussels"}]},
+        "https://sample.bamboohr.com/careers/list": {"result": [
+            {"id": "ba1", "jobOpeningName": "Marketing Manager", "location": "Berlin"}]},
+        "https://app.jazz.co/feeds/export/jobs/sample": (
+            "<jobs><job><id>j1</id><title>Analyst</title><city>Amsterdam</city></job></jobs>"),
+        "https://sample.keka.com/careers": (
+            '<a href="/ats/documents/123e4567-e89b-12d3-a456-426614174000/careerportal">Careers</a>'),
+        "https://sample.keka.com/careers/api/embedjobs/default/active/123e4567-e89b-12d3-a456-426614174000": [
+            {"jobId": "k1", "title": "Consultant", "location": "Paris"}],
+        "https://feed.homerun.co/sample": (
+            '<feed xmlns="http://www.w3.org/2005/Atom"><entry><id>h1</id><title>Designer</title>'
+            '<link href="https://feed.homerun.co/sample/jobs/h1"/><summary>Design</summary></entry></feed>'),
+    }
+    http = FakeHttp(routes)
+    assert adapters.breezy("sample", http)[0]["id"] == "b1"
+    assert adapters.pinpoint("sample", http)[0]["url"] == "https://sample.pinpointhq.com/postings/p1"
+    assert adapters.bamboohr("sample", http)[0]["title"] == "Marketing Manager"
+    assert adapters.jazzhr("sample", http)[0]["title"] == "Analyst"
+    assert adapters.keka("sample", http)[0]["id"] == "k1"
+    assert adapters.homerun("sample", http)[0]["title"] == "Designer"
+
+
+def test_europe_remote_is_accepted_when_location_is_explicit():
+    base = {"id": "1", "title": "Product Manager", "url": "https://jobs.ashbyhq.com/sample/1"}
+    assert normalize({**base, "location": "Remote Europe", "remote": True},
+                     _public_board("ashby", hq="US"), NOW)["country"] == "EU"
