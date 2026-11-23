@@ -53,6 +53,8 @@ def test_geo_city_and_country():
     assert geo.locate("Somewhere in Poland")["country"] == "PL"
     assert geo.locate("Cambridge, MA", "US") is None
     assert geo.locate("Frankfurt am Main")["country"] == "DE"
+    assert geo.locate("Vitry-sur-Seine, France")["city"] == "Vitry-sur-Seine"
+    assert geo.locate("Pantin, France")["city"] == "Pantin"
 
 
 # ------------------------------------------------------------ normalisation
