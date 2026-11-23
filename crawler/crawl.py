@@ -35,6 +35,12 @@ def load_companies(path: Path, only: set[str] | None = None, registry_db: Path |
     if curated_config:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         candidates = data.get("companies", [])
+        # Dynamically add every approved French legal-entity source from SIRENE.
+        # The YAML entries are compatibility seeds, not a company-count limit.
+        if registry_db is not None and registry_db.exists():
+            candidates = list(candidates) + [
+                c for c in approved_companies(registry_db) if c.get("hq") == "FR"
+            ]
         for item in candidates:
             item.setdefault("ats_slug", item.get("slug"))
             reviewed = item.get("source_reviewed_on")
