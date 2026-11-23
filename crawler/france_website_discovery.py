@@ -256,6 +256,11 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
         if place_id not in source_ids:
             source_ids.append(place_id)
         merged_ids = sorted(set(existing_ids) | set(registry_ids))
+        new_registry_matches = bool(set(merged_ids) - set(existing_ids))
+        requeue = new_registry_matches and existing["status"] not in {
+            "verified_siren_match", "verified_alternative_domain_needs_review"
+        }
+        next_status = "pending_verification" if requeue else existing["status"]
         con.execute(
             """UPDATE france_website_candidates
                SET candidate_url=?, source_record_ids_json=?, candidate_registry_ids_json=?,
@@ -264,11 +269,15 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                                    ELSE MAX(confidence, ?) END,
                    address=COALESCE(address, ?), locality=COALESCE(locality, ?),
                    postcode=COALESCE(postcode, ?), region=COALESCE(region, ?),
-                   match_method=CASE WHEN match_method='exact_trading_name' THEN ? ELSE match_method END
+                   match_method=CASE WHEN match_method='exact_trading_name' THEN ? ELSE match_method END,
+                   status=?,
+                   last_checked_at=CASE WHEN ? THEN NULL ELSE last_checked_at END,
+                   verification_note=CASE WHEN ? THEN NULL ELSE verification_note END,
+                   verified_legal_notice_url=CASE WHEN ? THEN NULL ELSE verified_legal_notice_url END
                WHERE id=?""",
             (website_url, json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids), now,
              release, confidence, confidence, confidence, address, locality, postcode,
-             region, match_method, existing["id"]),
+             region, match_method, next_status, int(requeue), int(requeue), int(requeue), existing["id"]),
         )
         return
     con.execute(
