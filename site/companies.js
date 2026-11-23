@@ -143,7 +143,7 @@
   }
 
   function filterRecords(records) {
-    const country = $("country-filter").value || "FR";
+    const country = "FR";
     const status = $("entity-status-filter").value;
     return records.filter((record) => (!country || record.country === country) && (!status || record.entityStatus === status));
   }
@@ -261,7 +261,7 @@
       } else {
         const params = new URLSearchParams();
         params.set("filter[entity.legalName]", query);
-        const country = $("country-filter").value;
+        const country = "FR";
         const entityStatus = $("entity-status-filter").value;
         if (country) params.set("filter[entity.legalAddress.country]", country);
         if (entityStatus) params.set("filter[entity.status]", entityStatus);
