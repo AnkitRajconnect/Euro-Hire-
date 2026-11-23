@@ -3,9 +3,11 @@ import json
 from datetime import datetime, timezone
 
 from crawler.company_registry import connect, upsert_candidate
+from crawler.france_establishment_aliases import SCHEMA as ESTABLISHMENT_ALIAS_SCHEMA
 from crawler.france_website_discovery import (
     SCHEMA,
     _canonical_host,
+    _company_name_index,
     extract_legal_sirens,
     export_verified_websites,
     name_keys,
@@ -77,6 +79,7 @@ def add_company_and_candidate(db, *, siren="123456789", domain="candidate.fr",
 def test_french_name_matching_handles_accents_and_legal_suffix():
     assert "electricite de france" in name_keys("Électricité de France S.A.")
     assert "exemple industrie" in name_keys("EXEMPLE INDUSTRIE SAS")
+    assert "maison du sport" in name_keys("MAISON DU SPORT Société par actions simplifiée")
 
 
 def test_candidate_host_normalization_rejects_directories_and_social_profiles():
@@ -190,4 +193,23 @@ def test_public_export_contains_only_verified_same_company_websites(tmp_path):
         "SELECT verified_legal_notice_url FROM france_website_candidates"
     ).fetchone()
     assert stored_proof["verified_legal_notice_url"] == "https://candidate.fr/mentions-legales"
+    con.close()
+
+def test_sirene_establishment_alias_links_shop_name_to_legal_employer(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = add_company_and_candidate(db)
+    con.executescript(ESTABLISHMENT_ALIAS_SCHEMA)
+    con.execute(
+        """INSERT INTO france_company_name_aliases
+           (siren,alias,normalized_alias,source_siret,postcode,locality,source_field,source_release)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (
+            "123456789", "MAISON DU SPORT", "maison du sport",
+            "12345678900012", "75001", "PARIS",
+            "enseigne1Etablissement", "2026-11-01",
+        ),
+    )
+    index = _company_name_index(con)
+
+    assert index["maison du sport"]["123456789"] == "exact_establishment_alias"
     con.close()
