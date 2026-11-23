@@ -476,7 +476,7 @@ def ingest_overture_release(con, release: str) -> dict:
             WITH french_places AS (
                 SELECT id, names, brand, websites, sources, confidence,
                        taxonomy.primary AS place_category,
-                       list_filter(addresses, a -> a.country = 'FR') AS fr_addresses
+                       list_filter(addresses, lambda a : a.country = 'FR') AS fr_addresses
                 FROM read_parquet('{source}')
                 WHERE addresses IS NOT NULL
                   AND len(addresses) > 0
