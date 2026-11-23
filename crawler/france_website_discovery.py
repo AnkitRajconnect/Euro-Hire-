@@ -988,7 +988,9 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000) -> dict:
     }
 
 
-def build_report(con, release: str, ingest: dict | None, verification: dict) -> dict:
+def build_report(con, release: str, ingest: dict | None, verification: dict,
+                 source_runs: dict | None = None) -> dict:
+    ensure_discovery_schema(con)
     status_rows = con.execute(
         "SELECT status,COUNT(*) AS count FROM france_website_candidates GROUP BY status ORDER BY status"
     ).fetchall()
@@ -999,27 +1001,55 @@ def build_report(con, release: str, ingest: dict | None, verification: dict) -> 
     companies = con.execute(
         "SELECT COUNT(*) FROM companies WHERE country='FR' AND registry_status='active' AND legal_person=1"
     ).fetchone()[0]
+    provider_counts: dict[str, int] = {}
+    language_counts: dict[str, int] = {}
+    match_method_counts: dict[str, int] = {}
+    candidates = con.execute(
+        "SELECT match_method,matched_names_json,source_evidence_json FROM france_website_candidates"
+    ).fetchall()
+    for row in candidates:
+        method = str(row["match_method"] or "unknown")
+        match_method_counts[method] = match_method_counts.get(method, 0) + 1
+        try:
+            names = json.loads(row["matched_names_json"] or "[]")
+        except (TypeError, ValueError):
+            names = []
+        for name in names if isinstance(names, list) else []:
+            language = str(name.get("language") or "unspecified").lower()
+            language_counts[language] = language_counts.get(language, 0) + 1
+        try:
+            evidence = json.loads(row["source_evidence_json"] or "[]")
+        except (TypeError, ValueError):
+            evidence = []
+        seen_in_row = set()
+        for item in evidence if isinstance(evidence, list) else []:
+            provider = str(item.get("provider") or "unspecified")
+            if provider not in seen_in_row:
+                provider_counts[provider] = provider_counts.get(provider, 0) + 1
+                seen_in_row.add(provider)
+
+    alias_table_exists = con.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='france_company_name_aliases'"
+    ).fetchone()
+    alias_count = con.execute("SELECT COUNT(*) FROM france_company_name_aliases").fetchone()[0] if alias_table_exists else 0
     return {
         "country": "FR",
-        "source": "Overture Maps Places (candidate discovery only)",
-        "source_release": release,
-        "source_license": "CDLA Permissive 2.0 / Apache 2.0 (see Overture attribution requirements)",
         "generated_at": now_iso(),
+        "sources": source_runs or {},
+        "source_release": release,
         "active_legal_entities_in_registry": companies,
         "verified_official_domains_in_company_registry": domains,
         "website_candidate_rows": sum(statuses.values()),
         "candidate_status_counts": statuses,
-        "establishment_alias_rows": con.execute(
-            "SELECT COUNT(*) FROM france_company_name_aliases"
-        ).fetchone()[0] if con.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='france_company_name_aliases'"
-        ).fetchone() else 0,
-        "latest_ingest": ingest or {"skipped": True, "reason": "Overture release already present in persistent SQLite cache"},
+        "discovery_source_candidate_counts": provider_counts,
+        "matched_name_language_counts": language_counts,
+        "candidate_match_method_counts": match_method_counts,
+        "establishment_alias_rows": alias_count,
+        "latest_overture_ingest": ingest or {"skipped": True, "reason": "No new Overture release was imported"},
         "verification_batch": verification,
         "verification_rule": "A domain is automatically verified only when its same-company SIREN/SIRET is found in an accessible first-party legal notice. Other cases remain pending or need review.",
-        "coverage_limit": "Overture covers public physical places, not every legal entity or online-only employer. Its Places dataset has documented duplicates and incomplete fields; results are candidates, not an exhaustive company directory.",
+        "coverage_limit": "Overture Places covers physical places and Wikidata covers only entities represented in its knowledge graph. Neither is a complete source for all French employers. Candidate websites are never approved from names alone.",
     }
-
 
 def export_verified_websites(con, output: Path) -> int:
     """Publish only domains independently matched to a company's SIREN/SIRET."""
