@@ -112,10 +112,26 @@ def name_keys(value: str) -> set[str]:
         return set()
     keys = {" ".join(tokens)}
     trimmed = list(tokens)
-    while trimmed and trimmed[0] in LEGAL_SUFFIXES:
-        trimmed.pop(0)
-    while trimmed and trimmed[-1] in LEGAL_SUFFIXES:
-        trimmed.pop()
+    # Legal forms may be written with or without punctuation (S.A., S.A.S.).
+    legal_form_sequences = {
+        ("s", "a"), ("s", "a", "s"), ("s", "a", "s", "u"),
+        ("s", "a", "r", "l"), ("e", "u", "r", "l"),
+        ("s", "c", "i"), ("s", "n", "c"),
+    }
+    changed = True
+    while changed and trimmed:
+        changed = False
+        for suffix in sorted(legal_form_sequences, key=len, reverse=True):
+            if tuple(trimmed[-len(suffix):]) == suffix:
+                trimmed = trimmed[:-len(suffix)]
+                changed = True
+                break
+        if not changed and trimmed[-1] in LEGAL_SUFFIXES:
+            trimmed.pop()
+            changed = True
+        if not changed and trimmed[0] in LEGAL_SUFFIXES:
+            trimmed.pop(0)
+            changed = True
     if trimmed:
         keys.add(" ".join(trimmed))
     return {key for key in keys if len(key.replace(" ", "")) >= 3 and key not in GENERIC_NAMES}
