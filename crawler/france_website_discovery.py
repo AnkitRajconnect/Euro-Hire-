@@ -1043,9 +1043,10 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
         con.execute(
             """UPDATE france_website_candidates
                SET status=?,last_checked_at=?,attempt_count=attempt_count+1,verification_note=?,
-                   verified_legal_notice_url=?
+                   verified_legal_notice_url=?,verified_registry_id=?
                WHERE id=?""",
-            (status, checked_at, note, verified_legal_notice_url, row["id"]),
+            (status, checked_at, note, verified_legal_notice_url,
+             matched_siren if resolved_company else None, row["id"]),
         )
 
         # The same root domain can appear against many outlets/trading names.
@@ -1078,10 +1079,13 @@ def verify_pending_candidates(con, http: Http, *, limit: int = 1000,
                    SET candidate_registry_ids_json=?,matched_company_count=?,
                        match_score=CASE WHEN ?='verified_siren_match' THEN 100 ELSE match_score END,
                        status=?,last_checked_at=?,attempt_count=attempt_count+1,
-                       verification_note=?,verified_legal_notice_url=?
+                       verification_note=?,verified_legal_notice_url=?,verified_registry_id=?
                    WHERE id=?""",
                 (json.dumps(duplicate_ids), len(set(duplicate_ids)), duplicate_status,
-                 duplicate_status, checked_at, duplicate_note, verified_legal_notice_url, duplicate["id"]),
+                 duplicate_status, checked_at, duplicate_note, verified_legal_notice_url,
+                 matched_siren if duplicate_status in {
+                     "verified_siren_match", "verified_alternative_domain_needs_review"
+                 } and resolved_company else None, duplicate["id"]),
             )
 
         # Revoke previously approved proof if the legal notice no longer
