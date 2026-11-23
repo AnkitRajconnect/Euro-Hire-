@@ -345,7 +345,7 @@ def jsonld(slug, http, urls=None, **_):
             raise FetchError(f"robots.txt disallows {page_url}")
         page = http.get_text(page_url)
         for match in re.finditer(
-            r'<script[^>]+application/ld\\+json[^>]*>(.*?)</script>',
+            r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>',
             page, re.S | re.I,
         ):
             try:
