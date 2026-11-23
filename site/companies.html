@@ -26,7 +26,7 @@
     <section class="directory-hero" aria-labelledby="directory-title">
       <div class="eyebrow">EURO-HIRE · FRANCE EMPLOYER DISCOVERY</div>
       <h1 id="directory-title">Search employers across <span>France.</span></h1>
-      <p class="directory-lead">Look up active French legal entities using the official Recherche d'entreprises service, backed by RNE and SIRENE public records. Search by company name, SIREN or SIRET, and narrow results by region and economic sector.</p>
+      <p class="directory-lead">Search active French legal entities using the official Recherche d'entreprises service, backed by RNE and SIRENE public records. You can search by name or registration number, or browse by activity sector and region without knowing a company name.</p>
       <div class="source-pills" aria-label="Data source features">
         <span>France only</span><span>All regions</span><span>Official public data</span><span>Live search</span>
       </div>
@@ -36,7 +36,7 @@
       <form id="company-search" class="company-search-form">
         <label class="company-query-field" for="company-query">
           <span class="field-label">Company name, SIREN or SIRET</span>
-          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" placeholder="Search any French company or employer…" required>
+          <input id="company-query" name="q" type="search" autocomplete="off" minlength="3" placeholder="Company name, SIREN or SIRET (optional with filters)">
         </label>
         <button class="primary-button company-search-button" type="submit">Search France <span aria-hidden="true">→</span></button>
       </form>
@@ -78,10 +78,10 @@
       </div>
       <div class="quick-searches">
         <span>Try:</span>
-        <button type="button" data-query="commerce">Commerce</button>
-        <button type="button" data-query="industrie">Industrie</button>
-        <button type="button" data-query="transport">Transport</button>
-        <button type="button" data-query="restauration">Restauration</button>
+        <button type="button" data-sector="G">Commerce</button>
+        <button type="button" data-sector="C">Industrie</button>
+        <button type="button" data-sector="H">Transport</button>
+        <button type="button" data-sector="I">Restauration</button>
       </div>
     </section>
 
@@ -93,7 +93,7 @@
     <section class="directory-workspace" aria-label="Registry search results and shortlist">
       <div class="directory-results-column">
         <div class="directory-section-heading">
-          <div><h2>French registry matches</h2><p id="result-summary" aria-live="polite">Search all French regions by company name, SIREN, SIRET or sector keyword.</p></div>
+          <div><h2>French registry matches</h2><p id="result-summary" aria-live="polite">Search by name or registration number, or choose a region or activity sector to browse without a name.</p></div>
         </div>
         <div id="search-status" class="search-status" role="status" hidden></div>
         <div id="company-results" class="company-results">
@@ -131,7 +131,7 @@
     </section>
 
     <section class="source-credit">
-      <div><strong>Data provider: French government API Recherche d'entreprises</strong><p>Public RNE and SIRENE information. Search results are supplied directly by the official service; non-diffusible records are not exposed.</p></div>
+      <div><strong>Data provider: French government API Recherche d'entreprises</strong><p>Public RNE and SIRENE information. Search results are supplied directly by the official service; non-diffusible records are not exposed. Use region and activity filters to broaden and segment coverage.</p></div>
       <a href="https://recherche-entreprises.api.gouv.fr/docs/" target="_blank" rel="noopener noreferrer">API documentation ↗</a>
     </section>
   </main>

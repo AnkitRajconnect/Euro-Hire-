@@ -60,7 +60,9 @@ jobs:
           --output /tmp/france-domain-review-queue.json
 
       - name: Run the automated test suite
-        run: python -m pytest -q
+        run: |
+          python -m pytest -q
+          node --check site/companies.js
 
       - name: Discover career pages on verified French employer domains
         run: |

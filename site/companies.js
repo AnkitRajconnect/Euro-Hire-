@@ -241,9 +241,15 @@
 
   async function searchCompanies(page) {
     const query = $("company-query").value.trim();
-    if (query.length < 2) {
-      showStatus("Enter at least two characters, or a 9-digit SIREN / 14-digit SIRET.", "error");
+    const region = $("region-filter").value;
+    const sector = $("sector-filter").value;
+    if (query && query.length < 3 && !/^\\d{9}$|^\\d{14}$/.test(query)) {
+      showStatus("Enter at least three characters, a 9-digit SIREN or a 14-digit SIRET.", "error");
       $("company-query").focus();
+      return;
+    }
+    if (!query && !region && !sector) {
+      showStatus("Enter a company name, SIREN or SIRET, or choose a French region or activity sector to browse.", "error");
       return;
     }
     currentPage = page || 1;
@@ -252,14 +258,12 @@
     activeController = controller;
     const timeout = window.setTimeout(() => controller.abort(), 25000);
     const params = new URLSearchParams();
-    params.set("q", query);
+    if (query) params.set("q", query);
     params.set("page", String(currentPage));
     params.set("per_page", String(PAGE_SIZE));
     params.set("minimal", "true");
     params.set("include", "siege");
     const status = $("entity-status-filter").value;
-    const region = $("region-filter").value;
-    const sector = $("sector-filter").value;
     if (status) params.set("etat_administratif", status);
     if (region) params.set("region", region);
     if (sector) params.set("section_activite_principale", sector);
@@ -288,10 +292,13 @@
         return true;
       });
       const total = Number(data.total_results || data.total || data.meta?.total_results || currentRecords.length);
-      totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      totalPages = Math.max(1, Math.min(400, Math.ceil(total / PAGE_SIZE)));
       const visible = filterRecords(currentRecords).length;
       $("result-summary").textContent = total.toLocaleString("en-GB") + " public registry matches · " + visible + " shown on this page";
-      showStatus("Source: API Recherche d'entreprises (RNE / SIRENE). The service excludes non-diffusible records and is not a complete SIRENE data dump.");
+      const coverageNote = total >= 10000
+        ? " This filter has reached the API's 10,000-result ceiling; narrow by region or activity to continue exploring."
+        : "";
+      showStatus("Source: API Recherche d'entreprises (RNE / SIRENE). The service excludes non-diffusible records and is not a complete SIRENE data dump." + coverageNote);
       updatePagination();
       renderResults();
     } catch (error) {
@@ -322,15 +329,19 @@
       event.preventDefault();
       searchCompanies(1);
     });
-    document.querySelectorAll("[data-query]").forEach((button) => {
+    document.querySelectorAll("[data-sector]").forEach((button) => {
       button.addEventListener("click", () => {
-        $("company-query").value = button.dataset.query;
+        $("company-query").value = "";
+        $("sector-filter").value = button.dataset.sector;
         searchCompanies(1);
       });
     });
     ["region-filter", "sector-filter", "entity-status-filter"].forEach((id) => {
       $(id).addEventListener("change", () => {
-        if ($("company-query").value.trim().length >= 2) searchCompanies(1);
+        const query = $("company-query").value.trim();
+        if (query.length >= 3 || /^\\d{9}$|^\\d{14}$/.test(query) || $("region-filter").value || $("sector-filter").value) {
+          searchCompanies(1);
+        }
       });
     });
     $("employer-filter").addEventListener("change", renderResults);
