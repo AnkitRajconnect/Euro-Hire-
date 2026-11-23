@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+from email.utils import parsedate_to_datetime
 import hashlib
 import html
 import json
@@ -35,7 +36,7 @@ SITE_JSON_DEFAULT = ROOT / "site" / "data" / "jobs.json"
 REPORT_DEFAULT = ROOT / "data" / "pipeline_report.json"
 
 USER_AGENT = (
-    "EuroHireFrance/1.0 (+https://github.com/AnkitRajconnect/Euro-Hire-; "
+    "EuroHireEurope/1.0 (+https://github.com/AnkitRajconnect/Euro-Hire-; "
     "public job listing index; no applicant data)"
 )
 INSEE_URL = "https://recherche-entreprises.api.gouv.fr/search"
@@ -337,7 +338,11 @@ def parse_date(value: Any) -> str | None:
         try:
             return datetime.strptime(text[:10], "%Y-%m-%d").date().isoformat()
         except ValueError:
-            return None
+            try:
+                parsed = parsedate_to_datetime(text)
+                return parsed.date().isoformat() if parsed else None
+            except (TypeError, ValueError, OverflowError):
+                return None
 
 
 def strip_html(value: Any) -> str:
