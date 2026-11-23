@@ -1031,7 +1031,7 @@ def choose_insee_result(company_name: str, results: list[dict]) -> tuple[dict | 
     return candidates[0][1], candidates[0][0]
 
 
-async async def enrich_company_insee(http: PoliteHTTP, conn: sqlite3.Connection, company_key: str) -> bool:
+async def enrich_company_insee(http: PoliteHTTP, conn: sqlite3.Connection, company_key: str) -> bool:
     company = conn.execute("SELECT * FROM companies WHERE company_key=?", (company_key,)).fetchone()
     if not company or company["insee_match_status"] == "matched":
         return False
