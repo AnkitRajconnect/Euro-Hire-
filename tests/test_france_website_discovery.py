@@ -10,7 +10,10 @@ from crawler.france_website_discovery import (
     _company_name_index,
     _upsert_candidate,
     extract_legal_sirens,
+    extract_overture_name_variants,
+    extract_overture_source_evidence,
     export_verified_websites,
+    ingest_wikidata_siren_websites,
     name_keys,
     verify_pending_candidates,
 )
@@ -40,6 +43,16 @@ class FakeHttp:
         if isinstance(value, Exception):
             raise value
         return FakeResponse(url, value)
+
+
+class FakeJsonHttp:
+    def __init__(self, payload):
+        self.payload = payload
+        self.calls = []
+
+    def get_json(self, url, **kwargs):
+        self.calls.append((url, kwargs))
+        return self.payload
 
 
 def add_company_and_candidate(db, *, siren="123456789", domain="candidate.fr",
@@ -248,4 +261,92 @@ def test_new_registry_name_match_requeues_previously_mismatched_candidate(tmp_pa
     assert refreshed["status"] == "pending_verification"
     assert refreshed["last_checked_at"] is None
     assert refreshed["verification_note"] is None
+    con.close()
+
+
+def test_overture_name_variants_keep_french_common_and_alternate_names():
+    names = {
+        "primary": "Example Group",
+        "common": {
+            "fr": ["Groupe Exemple", "Exemple France"],
+            "en": ["Example France"],
+        },
+        "rules": [
+            {"value": "Groupe Exemple SAS", "language": "fr", "variant": "official"},
+            {"value": "Example", "language": "en", "variant": "alternate"},
+        ],
+    }
+    variants = extract_overture_name_variants(json.dumps(names))
+    values = {(item["value"], item["language"], item["variant"]) for item in variants}
+    assert ("Groupe Exemple", "fr", "common") in values
+    assert ("Exemple France", "fr", "common") in values
+    assert ("Groupe Exemple SAS", "fr", "official") in values
+    assert ("Example France", "en", "common") in values
+
+
+def test_overture_provenance_extraction_preserves_provider_and_license():
+    evidence = extract_overture_source_evidence(json.dumps([
+        {"property": "websites", "dataset": "places", "license": "ODbL",
+         "record_id": "place-123", "provider": "Example Provider"},
+        {"provider": "Second Provider", "version": "v2"},
+    ]))
+    assert evidence[0]["provider"] == "Example Provider"
+    assert evidence[0]["record_id"] == "place-123"
+    assert evidence[1]["version"] == "v2"
+
+
+def test_wikidata_siren_link_adds_candidate_but_does_not_approve_domain(tmp_path):
+    db = tmp_path / "france.sqlite3"
+    con = connect(db)
+    upsert_candidate(
+        con,
+        country="FR",
+        registry_id="123456789",
+        legal_name="EXEMPLE INDUSTRIE SAS",
+        legal_form="5710",
+        registry_status="active",
+        registry_source="INSEE SIRENE",
+        legal_person=True,
+        raw={"employer_scope": "employer", "employee_range": "11"},
+    )
+    payload = {
+        "results": {
+            "bindings": [
+                {
+                    "company": {"value": "http://www.wikidata.org/entity/Q123"},
+                    "siren": {"value": "123456789"},
+                    "website": {"value": "https://candidate.fr"},
+                    "label": {"value": "Exemple Industrie"},
+                },
+                {
+                    "company": {"value": "http://www.wikidata.org/entity/Q999"},
+                    "siren": {"value": "999999999"},
+                    "website": {"value": "https://not-in-registry.fr"},
+                    "label": {"value": "Unknown Company"},
+                },
+            ]
+        }
+    }
+    http = FakeJsonHttp(payload)
+    report = ingest_wikidata_siren_websites(con, http, pages=1, page_size=25)
+    candidate = con.execute(
+        "SELECT candidate_domain,status,match_method,source_evidence_json,matched_names_json "
+        "FROM france_website_candidates"
+    ).fetchone()
+    company = con.execute(
+        "SELECT official_domain,domain_verified FROM companies WHERE registry_id='123456789'"
+    ).fetchone()
+
+    assert report["wikidata_rows"] == 2
+    assert report["matched_french_employers"] == 1
+    assert report["unmatched_siren_rows"] == 1
+    assert candidate["candidate_domain"] == "candidate.fr"
+    assert candidate["status"] == "pending_verification"
+    assert candidate["match_method"] == "wikidata_siren_property"
+    assert json.loads(candidate["source_evidence_json"])[0]["website_property"] == "P856 (official website)"
+    assert json.loads(candidate["matched_names_json"])[0]["language"] == "fr"
+    assert company["official_domain"] is None
+    assert company["domain_verified"] == 0
+    assert len(http.calls) == 1
+    assert "wdt:P1616" in http.calls[0][1]["params"]["query"]
     con.close()
