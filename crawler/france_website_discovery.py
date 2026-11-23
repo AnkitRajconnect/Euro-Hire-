@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS france_website_candidates (
   match_method TEXT NOT NULL,
   match_score REAL NOT NULL,
   matched_names_json TEXT NOT NULL DEFAULT '[]',
+  observed_names_json TEXT NOT NULL DEFAULT '[]',
   source_evidence_json TEXT NOT NULL DEFAULT '[]',
   place_category TEXT,
   address TEXT,
@@ -122,6 +123,7 @@ def ensure_discovery_schema(con) -> None:
     columns = {row["name"] for row in con.execute("PRAGMA table_info(france_website_candidates)")}
     migrations = {
         "matched_names_json": "TEXT NOT NULL DEFAULT '[]'",
+        "observed_names_json": "TEXT NOT NULL DEFAULT '[]'",
         "source_evidence_json": "TEXT NOT NULL DEFAULT '[]'",
         "place_category": "TEXT",
         "verified_legal_notice_url": "TEXT",
@@ -349,13 +351,14 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                       match_method: str, address: str | None, locality: str | None,
                       postcode: str | None, region: str | None, confidence: float | None,
                       release: str, matched_names: list[dict] | None = None,
+                      observed_names: list[dict] | None = None,
                       source_evidence: list[dict] | None = None,
                       place_category: str | None = None) -> None:
     """Persist a discovered website and its source evidence without approving it."""
     now = now_iso()
     existing = con.execute(
         """SELECT id,source_record_ids_json,candidate_registry_ids_json,status,
-                  matched_names_json,source_evidence_json
+                  matched_names_json,observed_names_json,source_evidence_json
            FROM france_website_candidates
            WHERE candidate_domain=? AND normalized_name=?""",
         (domain, normalized_name),
@@ -391,6 +394,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
         }
         next_status = "pending_verification" if requeue else existing["status"]
         merged_names = merge_json_list(existing["matched_names_json"], matched_names)
+        merged_observed = merge_json_list(existing["observed_names_json"], observed_names)
         merged_sources = merge_json_list(existing["source_evidence_json"], source_evidence)
         con.execute(
             """UPDATE france_website_candidates
@@ -401,7 +405,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
                    address=COALESCE(address, ?), locality=COALESCE(locality, ?),
                    postcode=COALESCE(postcode, ?), region=COALESCE(region, ?),
                    match_method=CASE WHEN match_method='exact_trading_name' THEN ? ELSE match_method END,
-                   matched_names_json=?, source_evidence_json=?,
+                   matched_names_json=?, observed_names_json=?, source_evidence_json=?,
                    place_category=COALESCE(place_category, ?),
                    status=?,
                    last_checked_at=CASE WHEN ? THEN NULL ELSE last_checked_at END,
@@ -411,6 +415,7 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
             (website_url, json.dumps(source_ids), json.dumps(merged_ids), len(merged_ids), now,
              release, confidence, confidence, confidence, address, locality, postcode,
              region, match_method, json.dumps(merged_names, ensure_ascii=False),
+             json.dumps(merged_observed, ensure_ascii=False),
              json.dumps(merged_sources, ensure_ascii=False), place_category, next_status,
              int(requeue), int(requeue), int(requeue), existing["id"]),
         )
@@ -420,14 +425,15 @@ def _upsert_candidate(con, *, place_id: str, place_name: str, website_url: str,
         """INSERT INTO france_website_candidates
            (candidate_domain,candidate_url,normalized_name,place_name,source_record_ids_json,
             candidate_registry_ids_json,matched_company_count,match_method,match_score,
-            matched_names_json,source_evidence_json,place_category,
+            matched_names_json,observed_names_json,source_evidence_json,place_category,
             address,locality,postcode,region,confidence,source_release,status,
             first_seen_at,last_seen_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (domain, website_url, normalized_name, place_name,
          json.dumps([place_id]), json.dumps(sorted(set(registry_ids))), len(set(registry_ids)),
-         match_method, 100.0 if len(set(registry_ids)) == 1 else 75.0,
+         match_method, 100.0 if len(set(registry_ids)) == 1 else (75.0 if registry_ids else 0.0),
          json.dumps(matched_names or [], ensure_ascii=False),
+         json.dumps(observed_names or [], ensure_ascii=False),
          json.dumps(source_evidence or [], ensure_ascii=False),
          place_category, address, locality, postcode, region, confidence, release,
          "pending_verification", now, now),
