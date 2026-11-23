@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Weekly ATS-first discovery for France.
+"""Weekly ATS-first discovery for Europe.
 
 1. Seed public ATS board tokens from an MIT-licensed public snapshot.
 2. Expand the board index from Common Crawl S3 range indexes.
-3. Fetch live public job feeds and keep only France-based vacancies.
+3. Fetch live public job feeds and keep only Europe-based vacancies.
 4. Enrich companies with SIREN/NAF after jobs have proved the board is relevant.
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 from ats_pipeline import (
     DB_DEFAULT, PoliteHTTP, enrich_company_insee, fetch_ats_board,
-    fetch_wttj_france_jobs, init_db, mark_board_error, store_board_result,
+    fetch_wttj_europe_jobs, init_db, mark_board_error, store_board_result,
     utc_now, write_exports,
 )
 from commoncrawl_index import harvest_commoncrawl, seed_from_open_ats_feed
@@ -43,11 +43,11 @@ async def probe_board(http, conn, row, semaphores, run_started):
 
 async def sync_wttj(http, conn, run_started):
     """WTTJ is one country-filtered global index, not a list of company boards."""
-    raw_jobs, error = await fetch_wttj_france_jobs(http)
+    raw_jobs, error = await fetch_wttj_europe_jobs(http)
     if error:
         conn.execute("""
           INSERT INTO source_runs(source_key,last_checked_at,last_error)
-          VALUES('wttj-france',?,?)
+          VALUES('wttj-europe',?,?)
           ON CONFLICT(source_key) DO UPDATE SET
             last_checked_at=excluded.last_checked_at,last_error=excluded.last_error
         """, (run_started, error[:500]))
@@ -55,7 +55,7 @@ async def sync_wttj(http, conn, run_started):
         return {"source": "wttj", "ok": False, "error": error, "fr_jobs": 0}
     kept = store_board_result(
         conn,
-        {"ats_type": "wttj", "ats_slug": "france-index"},
+        {"ats_type": "wttj", "ats_slug": "europe-index"},
         raw_jobs, run_started, deactivate=False, update_board=False,
     )
     # Only a complete successful global search is allowed to expire older WTTJ jobs.
@@ -65,7 +65,7 @@ async def sync_wttj(http, conn, run_started):
     """, (run_started,))
     conn.execute("""
       INSERT INTO source_runs(source_key,last_checked_at,last_success_at,last_error)
-      VALUES('wttj-france',?,?,NULL)
+      VALUES('wttj-europe',?,?,NULL)
       ON CONFLICT(source_key) DO UPDATE SET
         last_checked_at=excluded.last_checked_at,
         last_success_at=excluded.last_success_at,last_error=NULL
@@ -109,7 +109,7 @@ async def run(args):
         "boards_selected": 0,
         "boards_ok": 0,
         "boards_failed": 0,
-        "france_jobs_from_ats": 0,
+        "europe_jobs_from_ats": 0,
         "wttj": None,
         "insee_companies_checked": 0,
     }
@@ -121,13 +121,15 @@ async def run(args):
                 http, conn, crawl_limit=args.crawl_limit
             )
 
-        # New boards are probed first. Boards that previously had no French jobs
-        # are reconsidered quarterly; active French boards are checked daily.
+        # New boards are probed first. Boards that previously had no European jobs
+        # are reconsidered quarterly; active European boards are checked daily.
         rows = conn.execute("""
           SELECT * FROM ats_boards
           WHERE last_probed_at IS NULL
-             OR last_probed_at < datetime('now','-90 days')
-          ORDER BY (last_probed_at IS NOT NULL),
+             OR (last_error IS NOT NULL AND last_probed_at < datetime('now','-1 day'))
+             OR (last_error IS NULL AND last_probed_at < datetime('now','-90 days'))
+          ORDER BY CASE WHEN last_probed_at IS NULL THEN 0
+                        WHEN last_error IS NOT NULL THEN 1 ELSE 2 END,
                    COALESCE(seed_posting_count,0) DESC,
                    first_seen_at
           LIMIT ?
@@ -142,22 +144,22 @@ async def run(args):
         ))
         report["boards_ok"] = sum(item["ok"] for item in results)
         report["boards_failed"] = len(results) - report["boards_ok"]
-        report["france_jobs_from_ats"] = sum(item.get("fr_jobs", 0) for item in results)
+        report["europe_jobs_from_ats"] = sum(item.get("fr_jobs", 0) for item in results)
 
         report["wttj"] = await sync_wttj(http, conn, run_started)
         report["insee_companies_checked"] = await enrich_pending(http, conn, args.max_insee)
 
-        report["companies_with_fr_jobs"] = conn.execute(
+        report["companies_with_europe_jobs"] = conn.execute(
             "SELECT COUNT(*) FROM companies"
         ).fetchone()[0]
         report["companies_matched_to_insee"] = conn.execute(
             "SELECT COUNT(*) FROM companies WHERE insee_match_status='matched'"
         ).fetchone()[0]
-        report["active_france_jobs"] = conn.execute(
+        report["active_europe_jobs"] = conn.execute(
             "SELECT COUNT(*) FROM jobs WHERE is_active=1"
         ).fetchone()[0]
-        report["boards_with_fr_jobs"] = conn.execute(
-            "SELECT COUNT(*) FROM ats_boards WHERE has_fr_jobs=1"
+        report["boards_with_europe_jobs"] = conn.execute(
+            "SELECT COUNT(*) FROM ats_boards WHERE has_europe_jobs=1"
         ).fetchone()[0]
         report["boards_remaining_unprobed"] = conn.execute(
             "SELECT COUNT(*) FROM ats_boards WHERE last_probed_at IS NULL"
@@ -173,7 +175,7 @@ async def run(args):
             "boards_selected": report["boards_selected"],
             "boards_ok": report["boards_ok"],
             "france_jobs": data["count"],
-            "companies": report["companies_with_fr_jobs"],
+            "companies": report["companies_with_europe_jobs"],
             "insee_matched": report["companies_matched_to_insee"],
             "unprobed": report["boards_remaining_unprobed"],
         }, ensure_ascii=False))
