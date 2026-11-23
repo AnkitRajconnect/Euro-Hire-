@@ -1,0 +1,15 @@
+{
+  "number_column": "siren",
+  "name_column": "denominationUniteLegale",
+  "status_column": "etatAdministratifUniteLegale",
+  "active_values": ["A"],
+  "inactive_values": ["C"],
+  "legal_form_column": "categorieJuridiqueUniteLegale",
+  "legal_form_prefixes": ["3", "4", "5", "6"],
+  "diffusion_column": "statutDiffusionUniteLegale",
+  "excluded_diffusion_values": ["P", "N"],
+  "activity_column": "activitePrincipaleUniteLegale",
+  "employee_range_column": "trancheEffectifsUniteLegale",
+  "snapshot_date": "REPLACE_WITH_SOURCE_FILE_DATE_YYYY_MM_DD",
+  "full_snapshot": false
+}

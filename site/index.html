@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#244B3B">
+  <title>GullyHire — Find work around you</title>
+  <meta name="description" content="Discover live job openings published on employer career boards across Europe. Filter opportunities and apply directly with employers.">
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://tile.openstreetmap.org">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="GullyHire home">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <span class="brand-name">GullyHire</span>
+    </a>
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a class="nav-link active" href="#discover">Find jobs</a>
+      <a class="nav-link" href="companies.html">Company database</a>
+      <a class="nav-link" href="#employers">For employers</a>
+      <button id="saved-toggle" class="saved-nav" type="button" aria-pressed="false">
+        Saved jobs <span id="saved-count" class="saved-count">0</span>
+      </button>
+    </nav>
+    <div class="header-meta" id="meta" aria-live="polite">Loading vacancies…</div>
+  </header>
+
+  <main id="top" class="page-shell">
+    <section class="intro" id="discover" aria-labelledby="page-title">
+      <div class="eyebrow">LOCAL WORK. CLEARER DISCOVERY.</div>
+      <h1 id="page-title">Find work <span>around you.</span></h1>
+      <p class="intro-copy">Discover current professional opportunities from public employer career feeds across Europe. Check each employer listing and apply directly on its careers website.</p>
+      <p class="company-database-link"><a href="companies.html">Explore the free company database →</a> <span>No account or API key required</span></p>
+
+      <form id="search-form" class="search-panel" role="search">
+        <label class="search-field">
+          <span class="field-label">What are you looking for?</span>
+          <span class="field-input-wrap">
+            <span class="field-symbol" aria-hidden="true">⌕</span>
+            <input id="q" type="search" autocomplete="off" placeholder="Job title, company or skill" aria-label="Job title, company or skill">
+          </span>
+        </label>
+        <span class="search-divider" aria-hidden="true"></span>
+        <label class="search-field location-field">
+          <span class="field-label">Where?</span>
+          <span class="field-input-wrap">
+            <span class="field-symbol location-symbol" aria-hidden="true">⌖</span>
+            <input id="where" type="search" autocomplete="off" placeholder="City or country" aria-label="City or country">
+          </span>
+        </label>
+        <button class="primary-button search-button" type="submit">Find jobs <span aria-hidden="true">→</span></button>
+      </form>
+
+      <section class="filter-panel" aria-label="Refine job search">
+        <div class="filter-selects">
+          <label class="select-wrap"><span class="sr-only">Country</span><select id="country" aria-label="Country"><option value="">All countries</option></select></label>
+          <label class="select-wrap"><span class="sr-only">Job category</span><select id="role" aria-label="Job category"><option value="">All categories</option></select></label>
+          <label class="select-wrap"><span class="sr-only">Experience level</span><select id="level" aria-label="Experience level">
+            <option value="">Any experience</option>
+            <option value="intern">Internship</option>
+            <option value="junior">Junior / graduate</option>
+            <option value="mid">Mid-level</option>
+            <option value="senior">Senior</option>
+            <option value="lead">Lead / manager</option>
+          </select></label>
+        </div>
+        <div class="filter-checks">
+          <label class="check-control"><input id="remote" type="checkbox"><span>Remote</span></label>
+          <label class="check-control"><input id="salary" type="checkbox"><span>Salary listed</span></label>
+          <label class="check-control"><input id="fresh" type="checkbox"><span>Added in 7 days</span></label>
+        </div>
+        <div class="filter-actions">
+          <button id="match-open" class="text-action" type="button">Match my CV</button>
+          <button id="reset" class="reset-button" type="button">Clear filters</button>
+        </div>
+      </section>
+    </section>
+
+    <div id="demo-banner" class="demo-banner" role="status" hidden></div>
+
+    <div class="discovery-layout layout" data-mobile-view="list" role="region" aria-label="Job discovery">
+      <div class="mobile-view-switch" role="group" aria-label="Choose discovery view">
+        <button id="show-list" type="button" class="view-tab active" aria-pressed="true">List</button>
+        <button id="show-map" type="button" class="view-tab" aria-pressed="false">Map</button>
+      </div>
+      <section class="map-panel" aria-labelledby="map-heading">
+        <div class="panel-heading map-heading">
+          <div>
+            <h2 id="map-heading">Explore the map</h2>
+            <p>Select a city to narrow the results.</p>
+          </div>
+          <button id="map-reset" class="quiet-button" type="button" title="Show all locations">Reset map</button>
+        </div>
+        <div id="map" role="application" aria-label="Map of job locations. Use the job list as an alternative. Press a city marker to filter jobs by that city."></div>
+        <div class="map-footnote"><span class="map-key" aria-hidden="true"></span> <span>Marker numbers show roles in each city</span></div>
+      </section>
+
+      <section class="results-panel" aria-labelledby="results-heading">
+        <div class="panel-heading results-heading">
+          <div>
+            <h2 id="results-heading">Opportunities</h2>
+            <p id="count" aria-live="polite">Loading jobs…</p>
+          </div>
+          <label class="sort-wrap"><span>Sort by</span><select id="sort" aria-label="Sort jobs"><option value="new">Newest</option><option value="match">Best match</option><option value="company">Company</option></select></label>
+        </div>
+        <div id="cityfilter" class="city-filter" hidden></div>
+        <ul id="list" class="job-list" aria-label="Job vacancies"></ul>
+        <button id="more" class="load-more" type="button" hidden>Show more jobs</button>
+      </section>
+    </div>
+
+    <section id="employers" class="employer-note">
+      <div>
+        <span class="eyebrow">FOR EMPLOYERS</span>
+        <h2>Want your vacancies on the map?</h2>
+        <p>GullyHire is currently building its employer directory from public company career feeds. Self-service job posting is not available in this early version.</p>
+      </div>
+      <span class="employer-note-mark" aria-hidden="true">G</span>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand"><span class="footer-mark" aria-hidden="true"></span><strong>GullyHire</strong></div>
+    <p>Vacancies link to the employer's application page. Map markers indicate the listed city, not an exact office address. Job previews are shortened; check the employer page for full requirements and current availability.</p>
+    <p class="footer-small">An early-stage job discovery project. Coverage depends on the companies and career feeds currently indexed.</p>
+    <p class="footer-small">Registry acknowledgements: Contains Irish Public Sector Data licensed under a Creative Commons Attribution 4.0 International (CC BY 4.0) licence. Finnish company-register data is attributed to PRH/YTJ (CC BY 4.0); Norwegian registry data is attributed to Brønnøysundregistrene (NLOD 2.0).</p>
+  </footer>
+
+  <dialog id="match" class="match-dialog">
+    <form method="dialog" class="match-form">
+      <div class="dialog-header">
+        <div><span class="eyebrow">PERSONALISED DISCOVERY</span><h2>Match jobs to your CV</h2></div>
+        <button class="dialog-close" type="submit" value="cancel" aria-label="Close">×</button>
+      </div>
+      <p class="dialog-note">Your CV text is analysed in this browser only. It is not uploaded or saved. Scores are estimates based on matching words, role and experience level.</p>
+      <label class="form-label" for="resume">Paste your CV or a list of skills</label>
+      <textarea id="resume" rows="8" placeholder="Paste CV text or list relevant skills…"></textarea>
+      <label class="form-label" for="years">Years of experience</label>
+      <input id="years" class="years-input" type="number" min="0" max="40" value="2">
+      <fieldset><legend>Roles you are interested in</legend><div id="wantroles" class="role-options"></div></fieldset>
+      <div class="dialog-actions">
+        <button class="secondary-button" type="submit" value="cancel">Cancel</button>
+        <button id="match-go" class="primary-button" type="submit" value="ok">Rank jobs</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js" defer></script>
+</body>
+</html>

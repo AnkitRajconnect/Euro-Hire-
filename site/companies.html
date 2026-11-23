@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#244B3B">
+  <title>Company database — GullyHire</title>
+  <meta name="description" content="Search public global legal-entity records from the GLEIF Global LEI Index. No account or API key required.">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="companies.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="index.html" aria-label="GullyHire home">
+      <span class="brand-mark" aria-hidden="true"><span></span></span>
+      <span class="brand-name">GullyHire</span>
+    </a>
+    <nav class="primary-nav" aria-label="Main navigation">
+      <a class="nav-link" href="index.html">Find jobs</a>
+      <a class="nav-link active" href="companies.html" aria-current="page">Company database</a>
+    </nav>
+    <div class="header-meta">Free public company data · No API key</div>
+  </header>
+
+  <main class="directory-shell">
+    <section class="directory-hero" aria-labelledby="directory-title">
+      <div class="eyebrow">GULLYHIRE · COMPANY DISCOVERY</div>
+      <h1 id="directory-title">Find a <span>registered entity.</span></h1>
+      <p class="directory-lead">Search the Global Legal Entity Identifier (LEI) Index. Get a legal name, LEI, registration status, legal form and registered address from a free public data source.</p>
+      <div class="source-pills" aria-label="Data source features">
+        <span>No account</span><span>No API key</span><span>Global records</span><span>Live search</span>
+      </div>
+    </section>
+
+    <section class="directory-search-panel" aria-label="Search company database">
+      <form id="company-search" class="company-search-form">
+        <label class="company-query-field" for="company-query">
+          <span class="field-label">Company name or 20-character LEI</span>
+          <input id="company-query" name="q" type="search" autocomplete="off" minlength="2" value="Microsoft" placeholder="Try Microsoft, Volvo, Siemens…" required>
+        </label>
+        <label class="company-filter-field" for="country-filter">
+          <span class="field-label">Country</span>
+          <select id="country-filter" name="country">
+            <option value="">All countries</option>
+            <option value="AT">Austria</option><option value="BE">Belgium</option><option value="CH">Switzerland</option>
+            <option value="DE">Germany</option><option value="DK">Denmark</option><option value="ES">Spain</option>
+            <option value="FI">Finland</option><option value="FR">France</option><option value="GB">United Kingdom</option>
+            <option value="IE">Ireland</option><option value="IT">Italy</option><option value="LU">Luxembourg</option>
+            <option value="NL">Netherlands</option><option value="NO">Norway</option><option value="PL">Poland</option>
+            <option value="SE">Sweden</option><option value="US">United States</option>
+          </select>
+        </label>
+        <button class="primary-button company-search-button" type="submit">Search companies <span aria-hidden="true">→</span></button>
+      </form>
+      <div class="quick-searches">
+        <span>Try:</span>
+        <button type="button" data-query="Microsoft">Microsoft</button>
+        <button type="button" data-query="Volvo">Volvo</button>
+        <button type="button" data-query="Siemens">Siemens</button>
+        <button type="button" data-query="BNP Paribas">BNP Paribas</button>
+      </div>
+    </section>
+
+    <section class="important-note" aria-label="Coverage and verification note">
+      <span class="note-icon" aria-hidden="true">i</span>
+      <p><strong>What this database does — and does not — prove.</strong> GLEIF contains legal entities that have an LEI; it is not a complete list of every small business or employer. An active entity status and an issued LEI are useful identity checks, but they do not prove that a company is hiring, that a website belongs to it, or that a job offer is genuine. GullyHire keeps every result as a <strong>candidate</strong> until its official domain and careers source are independently checked.</p>
+    </section>
+
+    <section class="directory-workspace" aria-label="Company search results and shortlist">
+      <div class="directory-results-column">
+        <div class="directory-section-heading">
+          <div><h2>Registry matches</h2><p id="result-summary" aria-live="polite">Enter a company name to search the public LEI database.</p></div>
+          <label class="compact-filter" for="entity-status-filter"><span>Entity status</span>
+            <select id="entity-status-filter"><option value="">All</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select>
+          </label>
+        </div>
+        <div id="search-status" class="search-status" role="status" hidden></div>
+        <div id="company-results" class="company-results">
+          <div class="empty-directory-state">
+            <div class="empty-mark" aria-hidden="true">G</div>
+            <h3>Your company search starts here</h3>
+            <p>Try a company name above. Results come from GLEIF’s public LEI records, directly in your browser.</p>
+          </div>
+        </div>
+        <div class="pagination-row">
+          <button id="previous-page" class="secondary-button" type="button" disabled>Previous</button>
+          <span id="page-label">Page 1</span>
+          <button id="next-page" class="secondary-button" type="button" disabled>Next</button>
+        </div>
+      </div>
+
+      <aside class="shortlist-panel" aria-labelledby="shortlist-title">
+        <div class="shortlist-heading">
+          <div><span class="eyebrow">YOUR WORKSPACE</span><h2 id="shortlist-title">Saved candidates <span id="shortlist-count">0</span></h2></div>
+        </div>
+        <p class="shortlist-intro">Save interesting companies while you test. This list stays in this browser only; it is not uploaded to GitHub or shared with other visitors.</p>
+        <div id="shortlist-items" class="shortlist-items">
+          <p class="shortlist-empty">No saved companies yet.</p>
+        </div>
+        <div class="shortlist-actions">
+          <button id="export-shortlist" class="primary-button export-button" type="button" disabled>Export CSV</button>
+          <button id="clear-shortlist" class="text-action" type="button" disabled>Clear list</button>
+        </div>
+        <div class="pipeline-next-step">
+          <span class="step-number">NEXT</span>
+          <strong>Verify before approval</strong>
+          <p>Find the official company website, confirm it independently, then locate the careers page or ATS board. A registry result alone never publishes jobs.</p>
+        </div>
+      </aside>
+    </section>
+
+    <section class="source-credit">
+      <div><strong>Data provider: GLEIF Global LEI Index</strong><p>GLEIF publishes open legal-entity reference data under CC0. Search requests use the public GLEIF API; no GullyHire account, API key or backend is required.</p></div>
+      <a href="https://www.gleif.org/en/lei-data/access-and-use-lei-data" target="_blank" rel="noopener noreferrer">About GLEIF open data ↗</a>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand"><span class="footer-mark" aria-hidden="true"></span><strong>GullyHire</strong></div>
+    <p>Company records help identify legal entities. They do not certify an employer, recruiter, vacancy or application process. Always verify the employer through its official sources.</p>
+    <p class="footer-small"><a href="index.html">Back to job discovery</a> · <a href="https://api.gleif.org/api/v1" target="_blank" rel="noopener noreferrer">GLEIF public API</a></p>
+  </footer>
+  <script src="companies.js" defer></script>
+</body>
+</html>

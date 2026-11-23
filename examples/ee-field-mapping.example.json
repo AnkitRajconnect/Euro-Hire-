@@ -1,0 +1,14 @@
+{
+  "number_column": "REPLACE_WITH_EXACT_REGISTRY_CODE_HEADER",
+  "name_column": "REPLACE_WITH_EXACT_LEGAL_NAME_HEADER",
+  "status_column": "REPLACE_WITH_EXACT_STATUS_HEADER",
+  "active_values": ["REPLACE_WITH_OFFICIAL_ACTIVE_STATUS_VALUE"],
+  "inactive_values": ["REPLACE_WITH_OFFICIAL_INACTIVE_STATUS_VALUE"],
+  "legal_form_column": "REPLACE_WITH_EXACT_LEGAL_FORM_HEADER",
+  "allowed_legal_forms": [
+    "REPLACE_WITH_EXACT_COMMERCIAL_LEGAL_FORM_VALUE"
+  ],
+  "website_column": "REPLACE_WITH_EXACT_WEBSITE_HEADER",
+  "snapshot_date": "YYYY-MM-DD",
+  "full_snapshot": false
+}
