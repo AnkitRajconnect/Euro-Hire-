@@ -1456,6 +1456,7 @@ def write_exports(conn: sqlite3.Connection, json_path: Path = JSON_DEFAULT,
                   csv_path: Path = CSV_DEFAULT, site_path: Path = SITE_JSON_DEFAULT,
                   report: dict | None = None) -> dict:
     purge_ineligible_jobs(conn)
+    conn.commit()
     data = export_data(conn)
     eligible_ids = {job["id"] for job in data["jobs"]}
     json_path.parent.mkdir(parents=True, exist_ok=True)
