@@ -5,6 +5,7 @@ from ats_pipeline import (
     choose_insee_result, export_data, fetch_ats_board, init_db, is_france_location,
     normalise_wttj_hit, parse_wttj_env, store_board_result, upsert_company, upsert_job,
     is_europe_location, is_recent_posting, is_professional_job, parse_date,
+    classify_experience_requirement,
 )
 from commoncrawl_index import board_record, surt_prefix, token_from_url
 
@@ -33,6 +34,55 @@ def test_europe_location_and_29_day_freshness():
     assert parse_date("Mon, 23 Nov 2026 12:00:00 GMT") == "2026-11-23"
     assert is_professional_job("Account Executive")
     assert not is_professional_job("Plumber")
+
+
+
+def test_experience_filter_accepts_two_to_three_and_rejects_three_plus():
+    assert classify_experience_requirement(
+        "Account Executive", "Requires 2–3 years of relevant experience"
+    )["status"] == "eligible"
+    assert classify_experience_requirement(
+        "Marketing Associate", "2 to 3 years experience"
+    )["status"] == "eligible"
+    assert classify_experience_requirement(
+        "CRM Specialist", "3 years of experience"
+    )["status"] == "eligible"
+    assert classify_experience_requirement(
+        "Sales Manager", "3+ years of experience"
+    )["status"] == "excluded"
+    assert classify_experience_requirement(
+        "Data Analyst", "4–5 years of experience"
+    )["status"] == "excluded"
+    assert classify_experience_requirement(
+        "Customer Success Manager", "Experience not specified"
+    )["status"] == "not_specified"
+    assert classify_experience_requirement(
+        "Senior Account Manager", "Experience not specified"
+    )["status"] == "excluded"
+
+
+def test_store_board_result_keeps_two_to_three_year_roles_only(tmp_path):
+    from datetime import date
+
+    conn = init_db(tmp_path / "experience.db")
+    board = {
+        "ats_type": "greenhouse", "ats_slug": "experienceco",
+        "board_url": "https://boards.greenhouse.io/experienceco",
+    }
+    today = date.today().isoformat()
+    jobs = [
+        {**_job("two-three", "Account Executive", "https://boards.greenhouse.io/experienceco/jobs/1"),
+         "posted_at": today, "description": "Requires 2–3 years of B2B experience."},
+        {**_job("three-plus", "Sales Lead", "https://boards.greenhouse.io/experienceco/jobs/2"),
+         "posted_at": today, "description": "Requires 3+ years of experience."},
+        {**_job("unknown", "Marketing Coordinator", "https://boards.greenhouse.io/experienceco/jobs/3"),
+         "posted_at": today, "description": "Experience is not specified."},
+    ]
+    kept = store_board_result(conn, board, jobs, "2026-11-24T00:00:00+00:00")
+    assert kept == 2
+    titles = {row["title"] for row in conn.execute("SELECT title FROM jobs WHERE is_active=1")}
+    assert titles == {"Account Executive", "Marketing Coordinator"}
+    conn.close()
 
 
 def test_commoncrawl_board_tokens_are_provider_agnostic():

@@ -164,6 +164,7 @@ EUROPE_CENTROIDS = {
     "AM": (40.07,45.04), "AZ": (40.14,47.58), "EU": (50.85,4.35),
 }
 MAX_JOB_AGE_DAYS = 29
+MAX_EXPERIENCE_YEARS = 3
 
 
 def normalise_country_code(value: Any) -> str | None:
@@ -316,6 +317,83 @@ def is_professional_job(title: str) -> bool:
         re.IGNORECASE,
     )
     return not bool(excluded.search(str(title or "")))
+
+
+def classify_experience_requirement(title: str, description: str = "") -> dict:
+    """Classify explicit experience requirements against the <=3-year target.
+
+    A stated 2–3 year range and exactly 3 years are eligible. Open-ended
+    3+ / minimum-3 requirements and requirements above 3 years are excluded.
+    Roles with no stated years remain visible but are labelled Not specified.
+    """
+    title_text = str(title or "")
+    body_text = str(description or "")
+    text = f"{title_text}\n{body_text}".replace("–", "-").replace("—", "-").replace("−", "-")
+    number = r"(\d{1,2}(?:[.,]\d+)?)"
+    year_unit = r"(?:years?|yrs?|ans?|annees?|années?)"
+    values: list[tuple[float, str, bool]] = []
+
+    # Closed ranges: the upper bound controls eligibility (2–3 is accepted).
+    for match in re.finditer(
+        rf"\b{number}\s*(?:-|to|à|a)\s*{number}\s*{year_unit}\b",
+        text, re.IGNORECASE,
+    ):
+        lower = float(match.group(1).replace(",", "."))
+        upper = float(match.group(2).replace(",", "."))
+        values.append((max(lower, upper), f"{match.group(1)}–{match.group(2)} years", False))
+
+    # Open-ended requirements: 3+ / at least 3 / 3 years minimum are not capped at 3.
+    open_patterns = (
+        rf"\b(?:at\s+least|minimum(?:\s+of)?|more\s+than|over|above|plus\s+de)\s*{number}\s*{year_unit}\b",
+        rf"\b{number}\s*\+\s*{year_unit}\b",
+        rf"\b{number}\s*{year_unit}\s*(?:\+|or\s+more|and\s+above|and\s+over|or\s+above|minimum|at\s+least)\b",
+    )
+    for pattern in open_patterns:
+        for match in re.finditer(pattern, text, re.IGNORECASE):
+            value = float(match.group(1).replace(",", "."))
+            values.append((value, f"{match.group(1)}+ years", True))
+
+    # Exact stated requirements such as "3 years of experience".
+    exact_pattern = rf"\b{number}\s*{year_unit}\b"
+    for match in re.finditer(exact_pattern, text, re.IGNORECASE):
+        value = float(match.group(1).replace(",", "."))
+        values.append((value, f"{match.group(1)} years", False))
+
+    # Seniority wording in the job title is a conservative fallback only when
+    # the employer has not supplied a numerical requirement.
+    senior_title = re.search(
+        r"\b(senior|sr\.?|principal|staff|lead|head\s+of|director|vp|vice\s+president|chief)\b",
+        title_text, re.IGNORECASE,
+    )
+
+    if not values:
+        if senior_title:
+            return {
+                "status": "excluded", "max_years": None,
+                "label": "Senior / lead role",
+            }
+        return {
+            "status": "not_specified", "max_years": None,
+            "label": "Not specified",
+        }
+
+    highest = max(value for value, _, _ in values)
+    has_open_three_or_more = any(value >= MAX_EXPERIENCE_YEARS and is_open
+                                 for value, _, is_open in values)
+    if highest > MAX_EXPERIENCE_YEARS or has_open_three_or_more:
+        return {
+            "status": "excluded", "max_years": highest,
+            "label": "More than 3 years required",
+        }
+
+    range_label = next((label for _, label, is_open in values
+                        if not is_open and "–" in label), None)
+    open_label = next((label for _, label, is_open in values if is_open), None)
+    exact_label = next((label for _, label, is_open in values if not is_open), None)
+    return {
+        "status": "eligible", "max_years": highest,
+        "label": range_label or open_label or exact_label or "3 years or less",
+    }
 
 
 def parse_date(value: Any) -> str | None:
@@ -577,6 +655,11 @@ def store_board_result(
             has_french_roles = True
         if not is_recent_posting(raw.get("posted_at")):
             continue
+        experience = classify_experience_requirement(
+            raw["title"], raw.get("description", "")
+        )
+        if experience["status"] == "excluded":
+            continue
         raw["country_code"] = country_code
         company_key = raw.get("company_key") or board_key
         company_ats_type = raw.get("company_ats_type") or board["ats_type"]
@@ -638,6 +721,7 @@ def _raw_job(
         "description": strip_html(fields.get("description")),
         "company_name": fields.get("company_name"),
         "company_website": fields.get("company_website"),
+        "experience_level": fields.get("experience_level"),
     }
 
 
@@ -988,7 +1072,11 @@ def normalise_wttj_hit(hit: dict) -> dict | None:
         location, country_code,
         department=(hit.get("new_profession") or {}).get("name") or hit.get("department"),
         posted_at=hit.get("published_at_timestamp"),
-        description=hit.get("description") or hit.get("summary") or "",
+        description=" ".join(part for part in (
+            hit.get("description") or hit.get("summary") or "",
+            f"Experience level: {hit.get('experience_level_minimum')}"
+            if hit.get("experience_level_minimum") else "",
+        ) if part),
         remote=hit.get("remote") == "fulltime",
         contract_type=hit.get("contract_type"),
         salary_min=hit.get("salary_yearly_minimum"),
@@ -1264,6 +1352,26 @@ async def enrich_company_insee(http: PoliteHTTP, conn: sqlite3.Connection, compa
         return False
 
 
+def purge_ineligible_jobs(conn: sqlite3.Connection) -> int:
+    """Delete expired and explicitly over-experienced rows from the retained DB."""
+    rows = conn.execute(
+        "SELECT job_key, title, description, posted_at FROM jobs"
+    ).fetchall()
+    remove = []
+    for row in rows:
+        if not is_recent_posting(row["posted_at"]):
+            remove.append((row["job_key"],))
+            continue
+        experience = classify_experience_requirement(
+            row["title"], row["description"] or ""
+        )
+        if experience["status"] == "excluded":
+            remove.append((row["job_key"],))
+    if remove:
+        conn.executemany("DELETE FROM jobs WHERE job_key=?", remove)
+    return len(remove)
+
+
 def export_data(conn: sqlite3.Connection, generated_at: str | None = None) -> dict:
     generated_at = generated_at or utc_now()
     rows = conn.execute("""
@@ -1289,6 +1397,11 @@ def export_data(conn: sqlite3.Connection, generated_at: str | None = None) -> di
     jobs = []
     naf_groups: dict[str, list[dict]] = defaultdict(list)
     for row in selected.values():
+        experience = classify_experience_requirement(
+            row["title"], row.get("description") or ""
+        )
+        if experience["status"] == "excluded":
+            continue
         country_code = row.get("country_code") or "EU"
         lat, lon = coordinates(row.get("city"), country_code)
         country_label = EUROPE_COUNTRY_NAMES.get(country_code, "Europe" if country_code == "EU" else country_code)
@@ -1305,6 +1418,9 @@ def export_data(conn: sqlite3.Connection, generated_at: str | None = None) -> di
             "remote": row.get("remote") == "remote",
             "role": classify_role(row["title"]),
             "level": classify_level(row["title"]),
+            "experience": experience["label"],
+            "experience_status": experience["status"],
+            "experience_max_years": experience["max_years"],
             "language": "",
             "salary": ({
                 "min": row.get("salary_min"), "max": row.get("salary_max"),
@@ -1339,7 +1455,9 @@ def export_data(conn: sqlite3.Connection, generated_at: str | None = None) -> di
 def write_exports(conn: sqlite3.Connection, json_path: Path = JSON_DEFAULT,
                   csv_path: Path = CSV_DEFAULT, site_path: Path = SITE_JSON_DEFAULT,
                   report: dict | None = None) -> dict:
+    purge_ineligible_jobs(conn)
     data = export_data(conn)
+    eligible_ids = {job["id"] for job in data["jobs"]}
     json_path.parent.mkdir(parents=True, exist_ok=True)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     site_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1348,7 +1466,7 @@ def write_exports(conn: sqlite3.Connection, json_path: Path = JSON_DEFAULT,
         "id", "title", "company", "siren", "naf_code", "naf_code_rev2",
         "naf_label", "city", "location", "contract_type", "remote",
         "salary_min", "salary_max", "salary_currency", "posted",
-        "apply_url", "source_type", "insee_match_status",
+        "experience", "apply_url", "source_type", "insee_match_status",
     ]
     with csv_path.open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=csv_fields, extrasaction="ignore")
@@ -1365,7 +1483,13 @@ def write_exports(conn: sqlite3.Connection, json_path: Path = JSON_DEFAULT,
             AND date(j.posted_at) <= date('now')
           ORDER BY date(j.posted_at) DESC
         """):
-            writer.writerow(dict(row))
+            if row["id"] not in eligible_ids:
+                continue
+            item = dict(row)
+            item["experience"] = next(
+                job["experience"] for job in data["jobs"] if job["id"] == row["id"]
+            )
+            writer.writerow(item)
     site_data = {
         "generated_at": data["generated_at"], "count": data["count"],
         "demo": False, "jobs": data["jobs"],

@@ -258,6 +258,7 @@
     const chips = element("div", { class: "job-chips" });
     if (ROLE_LABEL[job.role]) chips.append(element("span", { class: "job-chip", text: ROLE_LABEL[job.role] }));
     if (LEVEL_LABEL[job.level]) chips.append(element("span", { class: "job-chip", text: LEVEL_LABEL[job.level] }));
+    if (job.experience) chips.append(element("span", { class: "job-chip", text: `Experience: ${job.experience}` }));
     if (job.remote) chips.append(element("span", { class: "job-chip", text: "Remote" }));
     if (job.language) chips.append(element("span", { class: "job-chip", text: `${String(job.language).toUpperCase()} posting` }));
 
@@ -462,7 +463,7 @@
       banner.hidden = false;
     } else if (!jobs.length) {
       banner.textContent = generatedAt
-        ? "No current vacancies passed Euro-Hire's Europe, role and source checks in the latest successful crawl. Check again after the next refresh."
+        ? "No current vacancies passed Euro-Hire's Europe, role, experience and source checks in the latest successful crawl. Check again after the next refresh."
         : "The first live employer crawl runs automatically after GitHub setup. No sample or fictional vacancies are shown.";
       banner.hidden = false;
     } else {
@@ -562,7 +563,8 @@
       const oldestAllowed = now - 29 * 24 * 60 * 60 * 1000;
       jobs = data.demo === true ? [] : (Array.isArray(data.jobs) ? data.jobs.filter((job) => {
         const postedAt = Date.parse(job?.posted || "");
-        return job && typeof job.country === "string" && /^[A-Z]{2}$/.test(job.country) &&
+        return job && job.experience_status !== "excluded" &&
+          typeof job.country === "string" && /^[A-Z]{2}$/.test(job.country) &&
           job.ats !== "demo" && !String(job.id || "").startsWith("demo:") &&
           typeof job.url === "string" && job.url.startsWith("https://") &&
           Number.isFinite(postedAt) && postedAt >= oldestAllowed && postedAt <= now;
