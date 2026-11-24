@@ -1,0 +1,19 @@
+{
+  "generated_at": "2026-11-24T06:21:50+00:00",
+  "pipeline": "daily_ats_job_sync",
+  "boards_selected": 0,
+  "boards_ok": 0,
+  "boards_failed": 0,
+  "europe_jobs_from_ats": 0,
+  "wttj": {
+    "ok": false,
+    "error": "Algolia robots.txt disallows WTTJ public search index",
+    "fr_jobs": 0
+  },
+  "insee_companies_checked": 0,
+  "active_europe_jobs": 0,
+  "companies_count": 0,
+  "companies_matched_to_insee": 0,
+  "boards_with_europe_jobs": 0,
+  "ats_board_counts": {}
+}
