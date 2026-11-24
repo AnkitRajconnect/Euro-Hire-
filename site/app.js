@@ -559,15 +559,17 @@
       const data = await response.json();
       generatedAt = data.generated_at || null;
       // Never render placeholder/demo rows, even if an old data file is accidentally uploaded.
-      const now = Date.now();
-      const oldestAllowed = now - 29 * 24 * 60 * 60 * 1000;
+      const todayUtc = new Date();
+      todayUtc.setUTCHours(0, 0, 0, 0);
+      const oldestAllowed = todayUtc.getTime() - 29 * 24 * 60 * 60 * 1000;
+      const tomorrowUtc = todayUtc.getTime() + 24 * 60 * 60 * 1000;
       jobs = data.demo === true ? [] : (Array.isArray(data.jobs) ? data.jobs.filter((job) => {
         const postedAt = Date.parse(job?.posted || "");
         return job && job.experience_status !== "excluded" &&
           typeof job.country === "string" && /^[A-Z]{2}$/.test(job.country) &&
           job.ats !== "demo" && !String(job.id || "").startsWith("demo:") &&
           typeof job.url === "string" && job.url.startsWith("https://") &&
-          Number.isFinite(postedAt) && postedAt >= oldestAllowed && postedAt <= now;
+          Number.isFinite(postedAt) && postedAt >= oldestAllowed && postedAt < tomorrowUtc;
       }) : []);
     } catch (error) {
       console.error("Could not load job data:", error);
